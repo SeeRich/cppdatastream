@@ -3,8 +3,6 @@
 #include <fmt/color.h>
 #include <fmt/format.h>
 
-
-
 // Helpful logging macros
 #define logInfo(...) fmt::print(__VA_ARGS__)
 #define logDebug(...) fmt::print(fg(fmt::terminal_color::cyan), __VA_ARGS__)
