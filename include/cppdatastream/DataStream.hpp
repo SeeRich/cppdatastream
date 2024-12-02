@@ -3,13 +3,9 @@
 
 #pragma once
 
-#include "cppdatastream/Utilities.hpp"
-
 #ifdef _MSC_VER
     #pragma warning(push, 1)
 #endif
-#include "cppdatastream/external/queues/blockingconcurrentqueue.h"
-#include "cppdatastream/external/queues/concurrentqueue.h"
 #include "cppdatastream/external/queues/readerwriterqueue.h"
 #ifdef _MSC_VER
     #pragma warning(pop)
@@ -21,16 +17,136 @@
     #undef max
 #endif
 
-#include <boost/fiber/all.hpp>
-
 #include <any>
+#include <format>
+#include <functional>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <thread>
+#include <vector>
 
-namespace mc = moodycamel;
+namespace cppdatastream {
 
-class MetaData
+namespace detail {
+
+#ifndef _MSC_VER
+    #include <cxxabi.h>
+#endif
+
+/// @brief Designed to be called as demangleName(typeid(...).name())
+std::string demangleName(const std::string& name)
+{
+#ifndef _MSC_VER
+    int status{0};
+    return abi::__cxa_demangle(name.c_str(), 0, 0, &status);
+#else
+    // Typeid(...).name() is already demangled on windows.
+    return name;
+#endif
+}
+
+}  // namespace detail
+
+}  // namespace cppdatastream
+
+namespace cppdatastream {
+
+enum class LogLevel
+{
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Fatal
+};
+
+// Virtual logger interface
+class ILogger
 {
 public:
-    explicit MetaData() = default;
+    virtual ~ILogger() = default;
+
+    virtual void log(LogLevel level, const std::string& message) = 0;
+};
+
+// NullLogger implementation
+class NullLogger : public ILogger
+{
+public:
+    inline void log(LogLevel level, const std::string& message) override {}
+};
+
+// Global logger
+static std::mutex loggerMutex;
+static std::shared_ptr<ILogger> currentLogger = std::make_shared<NullLogger>();
+
+// Getter/Setter for the global logger
+std::shared_ptr<ILogger> getLogger()
+{
+    std::lock_guard lock(loggerMutex);
+    return currentLogger;
+}
+
+void setLogger(std::shared_ptr<ILogger> logger)
+{
+    std::lock_guard lock(loggerMutex);
+    currentLogger = logger;
+}
+
+}  // namespace cppdatastream
+
+#ifdef ENABLE_CPPDATASTREAM_LOGGING
+    #define CDS_LOG_TRACE(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Trace, std::format(__VA_ARGS__))
+    #define CDS_LOG_DEBUG(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Debug, std::format(__VA_ARGS__))
+    #define CDS_LOG_INFO(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Info, std::format(__VA_ARGS__))
+    #define CDS_LOG_WARN(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Warn, std::format(__VA_ARGS__))
+    #define CDS_LOG_ERROR(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Error, std::format(__VA_ARGS__))
+    #define CDS_LOG_FATAL(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Fatal, std::format(__VA_ARGS__))
+
+#else
+    #define CDS_LOG_TRACE(...)
+    #define CDS_LOG_DEBUG(...)
+    #define CDS_LOG_INFO(...)
+    #define CDS_LOG_WARNING(...)
+    #define CDS_LOG_ERROR(...)
+    #define CDS_LOG_FATAL(...)
+#endif
+
+#ifdef ENABLE_CPPDATASTREAM_DTOR_LOGGING
+    #define CDS_LOG_DTOR(...) cppdatastream::getLogger()->log(cppdatastream::LogLevel::Trace, std::format(__VA_ARGS__))
+    #define CDS_LOG_DTOR_VFUNC(name) \
+        virtual ~name() { CDS_LOG_DTOR("{} DTOR", className()); }
+#else
+    #define CDS_LOG_DTOR()
+    #define CDS_LOG_DTOR_VFUNC(name)
+#endif
+
+#define CPPDATASTREAM_CLASS_NAME() \
+    virtual std::string className() const { return cppdatastream::detail::demangleName(typeid(*this).name()); }
+
+namespace cppdatastream {
+
+// End of processing status
+// An upstream element can fill this out (e.g. if there was an exception/unhandled error)
+// and it will be passed all the way down the pipeline so that all elements can handle it
+// appropriately and the final element can report it to the user (i.e. via wait())
+enum EopStatusType
+{
+    EopSuccess,
+    EopCancelled,
+    EopError,
+};
+
+struct EopStatus
+{
+    // Type indicating success or failure
+    EopStatusType type{EopSuccess};
+    // Message associated with the status (should always be set for errors)
+    std::string message;
 };
 
 class SharedDataBlock
@@ -40,19 +156,32 @@ public:
 
     virtual ~SharedDataBlock() = default;
 
+    std::string typeName() const { return _data.type().name(); }
+
     template <typename T>
-    auto data() const -> const T&
+    auto isType() const -> bool
     {
-        return *std::any_cast<T>(_data.get());
+        return typeid(T) == _data.type();
     }
 
-    bool isEndOfProcessing() const { return _eop; }
+    template <typename T>
+    auto asType() const -> const T
+    {
+        return std::any_cast<T>(_data);
+    }
+
+    bool isEmpty() const { return _data.has_value(); }
+
+    bool isEndOfProcessing() const { return _eop.has_value(); }
+
+    auto eopStatus() const -> const std::optional<EopStatus> { return _eop; }
 
 protected:
-    /// Pointer to core data type
-    std::shared_ptr<std::any> _data;
+    /// Type erased data, this will make a copy so if you don't want
+    /// to copy a bunch of data, use a shared_ptr or something
+    std::any _data;
     /// @brief End of processing
-    bool _eop{false};
+    std::optional<EopStatus> _eop;
 };
 
 class WritableDataBlock : public SharedDataBlock
@@ -62,111 +191,244 @@ public:
 
     virtual ~WritableDataBlock() = default;
 
-    void setEndOfProcessing() { this->_eop = true; }
+    void setEndOfProcessing(const EopStatus& eop) { this->_eop = eop; }
 
-    template <typename T>
-    auto data() const -> std::shared_ptr<T>
-    {
-        return _data;
-    }
-
-    void setData(const auto& data) { _data = std::make_shared<std::any>(std::any(data)); }
+    void setData(const std::any& data) { _data = std::any(data); }
 
     auto asShared() const -> SharedDataBlock { return *this; }
+
+    static auto createEos(const EopStatus& eop) -> WritableDataBlock
+    {
+        WritableDataBlock block;
+        block.setEndOfProcessing(eop);
+        return block;
+    }
 };
 
-class DataStream
+class StreamVisitor
 {
 public:
-    DataStream() = default;
+    CPPDATASTREAM_CLASS_NAME();
 
-    virtual ~DataStream() { logDtor("DataStream DTOR: {}\n", className()); }
+    virtual ~StreamVisitor() {}
 
-    const std::string className() const { return demangleName(typeid(*this).name()); }
+    virtual bool visitData(const SharedDataBlock& sdb) = 0;
+};
 
-    /// @brief Connects the provided DataStream to downstream processing pipeline. Takes ownership
-    /// of DataStream.
-    /// @returns A pointer to the downstream DataStream
-    DataStream* connect(std::unique_ptr<DataStream>&& downstream)
-    {
-        _downstream = std::move(downstream);
-        return _downstream.get();
-    }
+class StreamProcessor
+{
+public:
+    CPPDATASTREAM_CLASS_NAME();
 
-    /// @brief Retrieve the downstream DataStream
-    DataStream* downStream() const { return _downstream.get(); }
+    virtual ~StreamProcessor() {}
 
-    /// @brief Push data downstream for processing
-    virtual void pushData(const SharedDataBlock& sdb)
-    {
-        if(!_downstream)
-            return;
-        // Let the downstream DataStream process the data block.
-        auto processed = _downstream->processData(sdb);
-        // Push the processed block downstream
-        _downstream->pushData(processed);
-    }
-
-    /// @brief Function that must be implemented by derived classes. Function provides a
-    ///     SharedDataBlock that must be processed and return a SharedDataBlock of specified type.
+    // Derived classes must implement this method
     virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock = 0;
 
+    // Connects and returns the downstream processor
+    virtual auto connect(const std::shared_ptr<StreamProcessor>& processor) -> std::shared_ptr<StreamProcessor>
+    {
+        processors.push_back(processor);
+        return processor;
+    }
+
+    virtual void connect(const std::shared_ptr<StreamVisitor>& visitor) { visitors.push_back(visitor); }
+
+    virtual void pushData(const SharedDataBlock& sdb)
+    {
+        // If we've already had an error, don't process any more data
+        if(_had_error)
+            return;
+
+        // Process the incoming dataBlock
+        auto output = processData(sdb);
+
+        // Handle error condition
+        if(output.isEndOfProcessing() && output.eopStatus().value().type == EopError) {
+            CDS_LOG_ERROR("{}: failed to process dataBlock type: {}",
+                          detail::demangleName(typeid(*this).name()),
+                          detail::demangleName(sdb.typeName()));
+            _had_error = true;
+        }
+
+        // Allow visitors to visit
+        for(auto& visitor : visitors) {
+            if(!visitor->visitData(output))
+                CDS_LOG_ERROR("{}: failed to visit dataBlock type: {}",
+                              detail::demangleName(typeid(*visitor).name()),
+                              detail::demangleName(sdb.typeName()));
+        }
+
+        // Push the processed data to the connected processors
+        for(auto& processor : processors) processor->pushData(output);
+    }
+
 protected:
-    /// @brief Metadata describing the DataStream
-    std::shared_ptr<MetaData> _meta;
-    /// @brief Downstream DataStream
-    std::unique_ptr<DataStream> _downstream;
+    std::string _name;
+    bool _had_error{false};
+    std::vector<std::shared_ptr<StreamVisitor>> visitors;
+    std::vector<std::shared_ptr<StreamProcessor>> processors;
 };
 
-class DataStreamThreadedBuffer : public DataStream
+class StreamSource
 {
 public:
-    explicit DataStreamThreadedBuffer(size_t maxBlocks = 100, bool blockOnFull = false)
-        : _queue(maxBlocks), _block_on_full(blockOnFull), _thread(&DataStreamThreadedBuffer::run, this)
+    CPPDATASTREAM_CLASS_NAME();
+
+    CDS_LOG_DTOR_VFUNC(StreamSource);
+
+    // Start processing (occurs in a background thread, i.e. this doesn't block)
+    virtual bool start() = 0;
+
+    // Stop processing
+    virtual bool stop() = 0;
+
+    // Cancel processing
+    virtual bool cancel() = 0;
+};
+
+/// Passthrough processor, useful to bridge specific elements that interface only with
+/// StreamProcessors
+class StreamNoopProcessor : public StreamProcessor
+{
+public:
+    CDS_LOG_DTOR_VFUNC(StreamNoopProcessor);
+
+protected:
+    virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock override { return sdb; }
+};
+
+class StreamThreadedBuffer : public StreamProcessor
+{
+public:
+    explicit StreamThreadedBuffer(size_t maxBlocks = 100, bool blockOnFull = false)
+        : _queue(maxBlocks), _block_on_full(blockOnFull)
     {}
 
-    ~DataStreamThreadedBuffer() { _thread.join(); }
+    virtual ~StreamThreadedBuffer()
+    {
+        if(_thread.joinable())
+            _thread.join();
+        CDS_LOG_DTOR("{} DTOR", className());
+    }
 
     virtual void pushData(const SharedDataBlock& sdb) override
     {
+        // If we haven't started the thread yet, do it now
+        if(!_thread_started) {
+            _thread = std::thread(&StreamThreadedBuffer::run, this);
+            _thread_started = true;
+        }
+
         // Push data into the queue
-        if(!_block_on_full) {
-            // Busy wait...
+        if(_block_on_full) {
+            // Busy wait... (i.e. block until space is available)
+            size_t count = 0;
             while(!_queue.try_enqueue(sdb)) {
-                // logWarn("SharedBlockThreadedBuffer skiped data because buffer is full\n");
+                // Log a warning if the buffer is being completely obliterated
+                if(500 == count) {
+                    CDS_LOG_WARN("StreamThreadedBuffer: blocking because buffer is full");
+                    count = 0;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                count++;
             }
         } else {
-            // Block
+            // Grow the queue to accomadate the new element
             _queue.enqueue(sdb);
         }
     }
 
 protected:
-    virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock override final
-    {
-        return _downstream->processData(sdb);
-    }
+    virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock override final { return sdb; }
 
 private:
     void run()
     {
         SharedDataBlock sdb;
-        _queue.wait_dequeue(sdb);
-        while(!sdb.isEndOfProcessing()) {
-            if(_downstream) {
-                sdb = this->processData(sdb);
-                _downstream->pushData(sdb);
-            }
+        do {
             _queue.wait_dequeue(sdb);
-        }
+            StreamProcessor::pushData(sdb);
+            if(sdb.isEndOfProcessing())
+                break;
+        } while(true);
     }
 
     /// @brief SPSC thread-safe queue used to buffer SharedDataBlocks
-    mc::BlockingConcurrentQueue<SharedDataBlock> _queue;
+    moodycamel::BlockingReaderWriterQueue<SharedDataBlock> _queue;
     /// Should the thread buffer block the input thread when the queue is full?
-    std::atomic<bool> _block_on_full{false};
+    std::atomic_bool _block_on_full{false};
     /// Thread used to push blocks downstream
     std::thread _thread;
+    /// Background thread started
+    bool _thread_started{false};
 };
+
+class OnEosVistor : public StreamVisitor
+{
+public:
+    OnEosVistor(std::function<void()> func) { _func = func; }
+
+    CDS_LOG_DTOR_VFUNC(OnEosVistor);
+
+private:
+    virtual bool visitData(const SharedDataBlock& sdb) override
+    {
+        if(sdb.isEndOfProcessing())
+            _func();
+        return true;
+    };
+
+    std::function<void()> _func;
+};
+
+class AnonymousVisitor : public StreamVisitor
+{
+public:
+    using AnonymousFunc = std::function<bool(const SharedDataBlock&)>;
+
+    AnonymousVisitor(AnonymousFunc func) { _func = func; }
+
+    CDS_LOG_DTOR_VFUNC(AnonymousVisitor);
+
+private:
+    virtual bool visitData(const SharedDataBlock& sdb) override { return _func(sdb); };
+
+    AnonymousFunc _func;
+};
+
+/// @brief StreamSink is a visitor that waits for an EndOfProcessing block and reports the status
+class StreamSink final : public StreamVisitor
+{
+public:
+    CPPDATASTREAM_CLASS_NAME();
+
+    CDS_LOG_DTOR_VFUNC(StreamSink);
+
+    virtual bool visitData(const SharedDataBlock& sdb) override
+    {
+        if(sdb.isEndOfProcessing())
+            _func(sdb.eopStatus().value());
+        return true;
+    };
+
+    EopStatus wait()
+    {
+        // Create a promise and a future
+        std::promise<EopStatus> promise;
+        auto future = promise.get_future();
+
+        // Set the function to set the promise
+        _func = [&promise](const EopStatus& eop) { promise.set_value(eop); };
+
+        // Wait for the future to be set
+        return future.get();
+    }
+
+private:
+    std::function<void(const EopStatus&)> _func;
+};
+
+}  // namespace cppdatastream
 
 #endif
