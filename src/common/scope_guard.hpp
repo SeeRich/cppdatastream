@@ -36,15 +36,14 @@ struct returns_void_t : public std::is_same<void, decltype(std::declval<T&&>()()
 /* Type trait determining whether a no-arg callable is nothrow invocable if
 required. This is where SG_REQUIRE_NOEXCEPT logic is encapsulated. */
 template <typename T>
-struct is_nothrow_invocable_if_required_t
-    : public
+struct is_nothrow_invocable_if_required_t : public
 #ifdef SG_REQUIRE_NOEXCEPT
-      std::is_nothrow_invocable<T> /* Note: _r variants not enough to
-                                      confirm void return: any return can be
-                                      discarded so all returns are
-                                      compatible with void */
+                                            std::is_nothrow_invocable<T> /* Note: _r variants not enough to
+                                                                            confirm void return: any return can be
+                                                                            discarded so all returns are
+                                                                            compatible with void */
 #else
-      std::true_type
+                                            std::true_type
 #endif
 {};
 
@@ -67,8 +66,7 @@ struct is_proper_sg_callback_t : public and_t<is_noarg_callable_t<T>,
 
 /* --- The actual scope_guard template --- */
 
-template <typename Callback,
-          typename = typename std::enable_if<is_proper_sg_callback_t<Callback>::value>::type>
+template <typename Callback, typename = typename std::enable_if<is_proper_sg_callback_t<Callback>::value>::type>
 class scope_guard;
 
 /* --- Now the friend maker --- */
@@ -88,8 +86,7 @@ class scope_guard<Callback> final
 public:
     typedef Callback callback_type;
 
-    scope_guard(scope_guard&& other) noexcept(
-        std::is_nothrow_constructible<Callback, Callback&&>::value);
+    scope_guard(scope_guard&& other) noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value);
 
     ~scope_guard() noexcept;  // highlight noexcept dtor
 
@@ -102,9 +99,8 @@ public:
     scope_guard& operator=(scope_guard&&) = delete;
 
 private:
-    explicit scope_guard(Callback&& callback) noexcept(
-        std::is_nothrow_constructible<Callback, Callback&&>::value); /*
-                                               meant for friends only */
+    explicit scope_guard(Callback&& callback) noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value); /*
+                                                                                              meant for friends only */
 
     friend scope_guard<Callback> make_scope_guard<Callback>(Callback&&) noexcept(
         std::is_nothrow_constructible<Callback, Callback&&>::value); /*

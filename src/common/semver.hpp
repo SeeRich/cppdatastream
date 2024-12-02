@@ -73,9 +73,8 @@
 
 #if defined(__clang__)
     #pragma clang diagnostic push
-    #pragma clang diagnostic ignored \
-        "-Wmissing-braces"  // Ignore warning: suggest braces around initialization of subobject
-                            // 'return {first, std::errc::invalid_argument};'.
+    #pragma clang diagnostic ignored "-Wmissing-braces"  // Ignore warning: suggest braces around initialization of
+                                                         // subobject 'return {first, std::errc::invalid_argument};'.
 #endif
 
 namespace semver {
@@ -129,10 +128,7 @@ inline constexpr auto rc = std::string_view{"rc", 2};
 // Min version string length = 1(<major>) + 1(.) + 1(<minor>) + 1(.) + 1(<patch>) = 5.
 inline constexpr auto min_version_string_length = 5;
 
-constexpr char to_lower(char c) noexcept
-{
-    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
-}
+constexpr char to_lower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c; }
 
 constexpr bool is_digit(char c) noexcept { return c >= '0' && c <= '9'; }
 
@@ -146,10 +142,7 @@ constexpr bool is_logical_or(char c) noexcept { return c == '|'; }
 
 constexpr bool is_hyphen(char c) noexcept { return c == '-'; }
 
-constexpr bool is_letter(char c) noexcept
-{
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-}
+constexpr bool is_letter(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 
 constexpr std::uint8_t to_digit(char c) noexcept { return static_cast<std::uint8_t>(c - '0'); }
 
@@ -254,10 +247,7 @@ constexpr bool check_delimiter(const char* first, const char* last, char d) noex
 template <typename T, typename = void>
 struct resize_uninitialized
 {
-    static auto resize(T& str, std::size_t size) -> std::void_t<decltype(str.resize(size))>
-    {
-        str.resize(size);
-    }
+    static auto resize(T& str, std::size_t size) -> std::void_t<decltype(str.resize(size))> { str.resize(size); }
 };
 
 template <typename T>
@@ -288,10 +278,7 @@ struct version
           prerelease_number{prt == prerelease::none ? static_cast<std::uint8_t>(0) : prn}
     {}
 
-    explicit constexpr version(std::string_view str) : version(0, 0, 0, prerelease::none, 0)
-    {
-        from_string(str);
-    }
+    explicit constexpr version(std::string_view str) : version(0, 0, 0, prerelease::none, 0) { from_string(str); }
 
     constexpr version() =
         default;  // https://semver.org/#how-should-i-deal-with-revisions-in-the-0yz-initial-development-phase
@@ -306,18 +293,15 @@ struct version
 
     version& operator=(version&&) = default;
 
-    [[nodiscard]] constexpr from_chars_result from_chars(const char* first,
-                                                         const char* last) noexcept
+    [[nodiscard]] constexpr from_chars_result from_chars(const char* first, const char* last) noexcept
     {
-        if(first == nullptr || last == nullptr ||
-           (last - first) < detail::min_version_string_length) {
+        if(first == nullptr || last == nullptr || (last - first) < detail::min_version_string_length) {
             return {first, std::errc::invalid_argument};
         }
 
         auto next = first;
         if(next = detail::from_chars(next, last, major); detail::check_delimiter(next, last, '.')) {
-            if(next = detail::from_chars(++next, last, minor);
-               detail::check_delimiter(next, last, '.')) {
+            if(next = detail::from_chars(++next, last, minor); detail::check_delimiter(next, last, '.')) {
                 if(next = detail::from_chars(++next, last, patch); next == last) {
                     prerelease_type = prerelease::none;
                     prerelease_number = 0;
@@ -327,8 +311,7 @@ struct version
                         prerelease_number = 0;
                         return {next, std::errc{}};
                     } else if(detail::check_delimiter(next, last, '.')) {
-                        if(next = detail::from_chars(++next, last, prerelease_number);
-                           next == last) {
+                        if(next = detail::from_chars(++next, last, prerelease_number); next == last) {
                             return {next, std::errc{}};
                         }
                     }
@@ -416,8 +399,7 @@ struct version
         }
 
         if(prerelease_type != other.prerelease_type) {
-            return static_cast<std::uint8_t>(prerelease_type) -
-                   static_cast<std::uint8_t>(other.prerelease_type);
+            return static_cast<std::uint8_t>(prerelease_type) - static_cast<std::uint8_t>(other.prerelease_type);
         }
 
         if(prerelease_number != other.prerelease_number) {
@@ -438,20 +420,14 @@ struct version
     return lhs.compare(rhs) != 0;
 }
 
-[[nodiscard]] constexpr bool operator>(const version& lhs, const version& rhs) noexcept
-{
-    return lhs.compare(rhs) > 0;
-}
+[[nodiscard]] constexpr bool operator>(const version& lhs, const version& rhs) noexcept { return lhs.compare(rhs) > 0; }
 
 [[nodiscard]] constexpr bool operator>=(const version& lhs, const version& rhs) noexcept
 {
     return lhs.compare(rhs) >= 0;
 }
 
-[[nodiscard]] constexpr bool operator<(const version& lhs, const version& rhs) noexcept
-{
-    return lhs.compare(rhs) < 0;
-}
+[[nodiscard]] constexpr bool operator<(const version& lhs, const version& rhs) noexcept { return lhs.compare(rhs) < 0; }
 
 [[nodiscard]] constexpr bool operator<=(const version& lhs, const version& rhs) noexcept
 {
@@ -463,14 +439,9 @@ struct version
     return version{std::string_view{str, length}};
 }
 
-[[nodiscard]] constexpr bool valid(std::string_view str) noexcept
-{
-    return version{}.from_string_noexcept(str);
-}
+[[nodiscard]] constexpr bool valid(std::string_view str) noexcept { return version{}.from_string_noexcept(str); }
 
-[[nodiscard]] constexpr from_chars_result from_chars(const char* first,
-                                                     const char* last,
-                                                     version& v) noexcept
+[[nodiscard]] constexpr from_chars_result from_chars(const char* first, const char* last, version& v) noexcept
 {
     return v.from_chars(first, last);
 }
@@ -494,8 +465,7 @@ struct version
 [[nodiscard]] inline std::string to_string(const version& v) { return v.to_string(); }
 
 template <typename Char, typename Traits>
-inline std::basic_ostream<Char, Traits>& operator<<(std::basic_ostream<Char, Traits>& os,
-                                                    const version& v)
+inline std::basic_ostream<Char, Traits>& operator<<(std::basic_ostream<Char, Traits>& os, const version& v)
 {
     for(const auto c : v.to_string()) {
         os.put(c);
@@ -512,62 +482,54 @@ enum struct comparators_option : std::uint8_t
     include_prerelease
 };
 
-[[nodiscard]] constexpr int compare(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr int compare(const version& lhs,
+                                    const version& rhs,
+                                    comparators_option option = comparators_option::include_prerelease) noexcept
 {
     if(option == comparators_option::exclude_prerelease) {
-        return version{lhs.major, lhs.minor, lhs.patch}.compare(
-            version{rhs.major, rhs.minor, rhs.patch});
+        return version{lhs.major, lhs.minor, lhs.patch}.compare(version{rhs.major, rhs.minor, rhs.patch});
     }
     return lhs.compare(rhs);
 }
 
-[[nodiscard]] constexpr bool equal_to(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr bool equal_to(const version& lhs,
+                                      const version& rhs,
+                                      comparators_option option = comparators_option::include_prerelease) noexcept
 {
     return compare(lhs, rhs, option) == 0;
 }
 
-[[nodiscard]] constexpr bool not_equal_to(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr bool not_equal_to(const version& lhs,
+                                          const version& rhs,
+                                          comparators_option option = comparators_option::include_prerelease) noexcept
 {
     return compare(lhs, rhs, option) != 0;
 }
 
-[[nodiscard]] constexpr bool greater(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr bool greater(const version& lhs,
+                                     const version& rhs,
+                                     comparators_option option = comparators_option::include_prerelease) noexcept
 {
     return compare(lhs, rhs, option) > 0;
 }
 
-[[nodiscard]] constexpr bool greater_equal(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr bool greater_equal(const version& lhs,
+                                           const version& rhs,
+                                           comparators_option option = comparators_option::include_prerelease) noexcept
 {
     return compare(lhs, rhs, option) >= 0;
 }
 
-[[nodiscard]] constexpr bool less(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr bool less(const version& lhs,
+                                  const version& rhs,
+                                  comparators_option option = comparators_option::include_prerelease) noexcept
 {
     return compare(lhs, rhs, option) < 0;
 }
 
-[[nodiscard]] constexpr bool less_equal(
-    const version& lhs,
-    const version& rhs,
-    comparators_option option = comparators_option::include_prerelease) noexcept
+[[nodiscard]] constexpr bool less_equal(const version& lhs,
+                                        const version& rhs,
+                                        comparators_option option = comparators_option::include_prerelease) noexcept
 {
     return compare(lhs, rhs, option) <= 0;
 }
@@ -599,8 +561,7 @@ public:
 
             while(is_operator_token() || is_number_token()) {
                 const auto range = parser.parse_range();
-                const bool equal_without_tags =
-                    equal_to(range.ver, ver, comparators_option::exclude_prerelease);
+                const bool equal_without_tags = equal_to(range.ver, ver, comparators_option::exclude_prerelease);
 
                 if(has_prerelease && equal_without_tags) {
                     allow_compare = true;
@@ -793,8 +754,7 @@ private:
         range_lexer lexer;
         range_token current_token;
 
-        constexpr explicit range_parser(std::string_view str)
-            : lexer{str}, current_token{range_token_type::none}
+        constexpr explicit range_parser(std::string_view str) : lexer{str}, current_token{range_token_type::none}
         {
             advance_token(range_token_type::none);
         }
@@ -904,8 +864,7 @@ constexpr bool satisfies(const version& ver,
 }  // namespace range
 
 // Version lib semver.
-inline constexpr auto semver_version =
-    version{SEMVER_VERSION_MAJOR, SEMVER_VERSION_MINOR, SEMVER_VERSION_PATCH};
+inline constexpr auto semver_version = version{SEMVER_VERSION_MAJOR, SEMVER_VERSION_MINOR, SEMVER_VERSION_PATCH};
 
 }  // namespace semver
 
