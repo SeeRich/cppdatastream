@@ -1,7 +1,0 @@
-[requires]
-boost/1.80.0
-fmt/9.1.0
-blaze/3.8
-
-[generators]
-cmake

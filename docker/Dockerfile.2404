@@ -1,0 +1,65 @@
+FROM ubuntu:noble AS build
+
+# Put all the tools in /opt/tools
+ENV WORKDIR=/opt/tools
+WORKDIR ${WORKDIR}
+# Add binaries to the PATH
+ENV PATH="${WORKDIR}/bin:${PATH}"
+
+############################## GENERAL UTILITIES ##############################
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt update && apt upgrade -y && apt install -y \
+    locales \
+    apt-transport-https \
+    ca-certificates \
+    build-essential \
+    git \
+    curl \
+    wget \
+    unzip \
+    libtool \
+    autoconf \
+    make \
+    libssl-dev \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt clean
+RUN locale-gen en_US.UTF-8
+# Update certs
+RUN update-ca-certificates
+
+############################## PYTHON ##############################
+ENV PYTHON_VER=3.12
+RUN apt update && apt upgrade -y && \
+    apt install -y python3-pip python3-venv && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt clean
+
+# Create and enable a virtual environment
+RUN python${PYTHON_VER} -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN python -m pip install --upgrade pip setuptools wheel
+
+############################## C++ Build Tools ##############################
+RUN python -m pip install cmake meson ninja conan
+
+############################## LLVM? ##############################
+
+############################## C++ Dependencies ##############################
+
+ENV DEPS_DIR=/opt/deps
+RUN mkdir -p ${DEPS_DIR}
+WORKDIR ${DEPS_DIR}
+
+############################## CONAN DEPS ##############################
+ENV CONAN_HOME=/usr/local/app/conan/home
+
+# Add dependencies to the runtime loader's path
+# ENV LD_LIBRARY_PATH=/opt/deps/libtorch/lib/:${LD_LIBRARY_PATH}
+
+# Set the workdir to the src directory
+ENV WORKDIR=/usr/local/app
+WORKDIR ${WORKDIR}
