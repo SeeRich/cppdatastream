@@ -139,7 +139,7 @@ int main(int argc, char* argv[])
     for(uint32_t i = 0; i < numStreams; ++i)
         downstream = downstream->connect(std::make_unique<DataStreamPassThrough>(i));
 
-    // Add simple processor datastream
+    // Add simple processor datastream (disabled for now...
     // downstream = downstream->connect(std::make_unique<SimpleDataStreamProcessor>());
 
     // Add throughput monitor
