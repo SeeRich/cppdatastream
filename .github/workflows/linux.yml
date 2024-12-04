@@ -78,10 +78,20 @@ jobs:
           echo C compiler: $($CC --version)
           echo C++ compiler: $($CXX --version)
 
+      - name: Cache Conan Dependencies
+        id: cache-conan
+        uses: actions/cache@v4
+        with:
+          path: |
+            $HOME/.conan2
+          key: ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.compiler_version }}-${{ hashFiles('conanfile.py') }}
+
       - name: Configure Conan
+        if: steps.cache-conan.outputs.cache-hit != 'true'
         run: conan profile detect
 
       - name: Build Conan Dependencies
+        if: steps.cache-conan.outputs.cache-hit != 'true'
         # We build the conan dependencies in release but install the config relating to the matrix build type.
         run: |
           conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps \
