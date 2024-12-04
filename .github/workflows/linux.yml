@@ -36,9 +36,10 @@ jobs:
             install: |
               wget https://apt.llvm.org/llvm.sh
               sudo bash ./llvm.sh 19
-              sudo apt install -y clang-format clang-tidy clang-tools clang clangd \
-                libc++-dev libc++1 libc++abi-dev libc++abi1 \
-                libomp5 lld \
+              sudo apt install -y \
+                clang-format clang-tidy clang-tools clang clangd \
+                libc++-dev libc++1 libc++abi-dev libc++abi1 libclang-dev libclang1 \
+                liblldb-dev libomp-dev libomp5 lld lldb llvm-dev \
                 llvm-runtime llvm
 
     steps:
