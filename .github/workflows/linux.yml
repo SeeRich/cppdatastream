@@ -88,6 +88,7 @@ jobs:
             -s "&:build_type=${{ matrix.build_type }}" -s :build_type=Release \
             -s compiler=${{ matrix.compiler }} \
             -s compiler.version=${{ matrix.compiler_version }} \
+            -s compiler.cppstd=${{ matrix.std }} \
             -s compiler.libcxx=${{ matrix.libcxx }}
 
       - name: CMake Configure
