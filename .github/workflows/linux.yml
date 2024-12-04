@@ -22,7 +22,10 @@ jobs:
             compiler: gcc
             compiler_version: 13
             libcxx: libstdc++11
-            install: sudo apt install -y g++-13
+            install: |
+              apt-repository ppa:ubuntu-toolchain-r/test
+              apt update
+              apt install -y g++-13
           - cc: clang-19
             cxx: clang++-19
             std: 20
@@ -56,6 +59,7 @@ jobs:
           echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV
 
       - name: Install ninja-build tool
+        id: ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
         with:
           version: 1.11.1
@@ -64,18 +68,25 @@ jobs:
         id: conan
         uses: turtlebrowser/get-conan@main
 
-      - name: Conan version
-        run: echo "${{ steps.conan.outputs.version }}"
+      - name: Print Versions
+        run: |
+          echo ninja version: $(ninja --version)
+          echo cmake version: $(cmake --version)
+          echo conan version: $(conan --version)
+          echo C compiler: $($CC --version)
+          echo C++ compiler: $($CXX --version)
+
+      - name: Configure Conan
+        run: conan profile detect
 
       - name: Build Conan Dependencies
         # We build the conan dependencies in release but install the config relating to the matrix build type.
-        run: |
-          conan profile detect
-          conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps \
-            --build missing \
+        run: >
+          conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps
+            --build missing
             -s "&:build_type=${{ matrix.build_type }}" -s :build_type=Release
-            -s compiler=${{ matrix.compiler }} \
-            -s compiler.version=${{ matrix.compiler_version }} \
+            -s compiler=${{ matrix.compiler }}
+            -s compiler.version=${{ matrix.compiler_version }}
             -s compiler.libcxx=${{ matrix.libcxx }}
 
       - name: CMake Configure
