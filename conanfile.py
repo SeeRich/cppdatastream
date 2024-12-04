@@ -11,4 +11,4 @@ class VideoserverRecipe(ConanFile):
                       options={"shared": False, "without_python": True})
         self.requires("cpptrace/0.7.3", options={"shared": False})
         # Testing
-        self.requires("catch2/3.7.1", options={"shared": False})
+        # self.requires("catch2/3.7.1", options={"shared": False})
