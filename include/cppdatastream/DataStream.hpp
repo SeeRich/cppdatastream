@@ -28,18 +28,19 @@
 #include <thread>
 #include <vector>
 
+#ifndef _MSC_VER
+    #define HAS_CXX_DEMANGLE
+    #include <cxxabi.h>
+#endif
+
 namespace cppdatastream {
 
 namespace detail {
 
-#ifndef _MSC_VER
-    #include <cxxabi.h>
-#endif
-
 /// @brief Designed to be called as demangleName(typeid(...).name())
-std::string demangleName(const std::string& name)
+::std::string demangleName(const ::std::string& name)
 {
-#ifndef _MSC_VER
+#ifdef HAS_CXX_DEMANGLE
     int status{0};
     return abi::__cxa_demangle(name.c_str(), 0, 0, &status);
 #else
@@ -128,6 +129,9 @@ void setLogger(std::shared_ptr<ILogger> logger)
 #define CPPDATASTREAM_CLASS_NAME() \
     virtual std::string className() const { return cppdatastream::detail::demangleName(typeid(*this).name()); }
 
+#define CPPDATASTREAM_CLASS_NAME_OVERRIDE() \
+    virtual std::string className() const override { return cppdatastream::detail::demangleName(typeid(*this).name()); }
+
 namespace cppdatastream {
 
 // End of processing status
@@ -156,30 +160,32 @@ public:
 
     virtual ~SharedDataBlock() = default;
 
-    std::string typeName() const { return _data.type().name(); }
+    std::string typeName() const { return _data ? _data->type().name() : "empty"; }
 
     template <typename T>
     auto isType() const -> bool
     {
-        return typeid(T) == _data.type();
+        return _data ? typeid(T) == _data->type() : false;
     }
 
     template <typename T>
-    auto asType() const -> const T
+    auto asType() const -> const T&
     {
-        return std::any_cast<T>(_data);
+        if(!_data) {
+            throw std::bad_any_cast();
+        }
+        return std::any_cast<const T&>(*_data);
     }
 
-    bool isEmpty() const { return _data.has_value(); }
+    bool isEmpty() const { return _data.operator bool(); }
 
     bool isEndOfProcessing() const { return _eop.has_value(); }
 
     auto eopStatus() const -> const std::optional<EopStatus> { return _eop; }
 
 protected:
-    /// Type erased data, this will make a copy so if you don't want
-    /// to copy a bunch of data, use a shared_ptr or something
-    std::any _data;
+    /// Shared data block
+    std::shared_ptr<std::any> _data;
     /// @brief End of processing
     std::optional<EopStatus> _eop;
 };
@@ -193,7 +199,7 @@ public:
 
     void setEndOfProcessing(const EopStatus& eop) { this->_eop = eop; }
 
-    void setData(const std::any& data) { _data = std::any(data); }
+    void setData(const std::any& data) { _data = std::make_shared<std::any>(std::any(data)); }
 
     auto asShared() const -> SharedDataBlock { return *this; }
 
@@ -255,7 +261,7 @@ public:
         for(auto& visitor : visitors) {
             if(!visitor->visitData(output))
                 CDS_LOG_ERROR("{}: failed to visit dataBlock type: {}",
-                              detail::demangleName(typeid(*visitor).name()),
+                              detail::demangleName(typeid(visitor).name()),
                               detail::demangleName(sdb.typeName()));
         }
 
@@ -401,7 +407,7 @@ private:
 class StreamSink final : public StreamVisitor
 {
 public:
-    CPPDATASTREAM_CLASS_NAME();
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
     CDS_LOG_DTOR_VFUNC(StreamSink);
 

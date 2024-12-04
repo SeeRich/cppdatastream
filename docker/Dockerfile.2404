@@ -31,6 +31,15 @@ RUN locale-gen en_US.UTF-8
 # Update certs
 RUN update-ca-certificates
 
+############################## LLVM ##############################
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh 19 && \
+    apt install -y clang-format clang-tidy clang-tools clang clangd \
+    libc++-dev libc++1 libc++abi-dev libc++abi1 libclang-dev libclang1 \
+    liblldb-dev libllvm-ocaml-dev libomp-dev libomp5 lld lldb llvm-dev \
+    llvm-runtime llvm python3-clang
+
 ############################## PYTHON ##############################
 ENV PYTHON_VER=3.12
 RUN apt update && apt upgrade -y && \
@@ -44,9 +53,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN python -m pip install --upgrade pip setuptools wheel
 
 ############################## C++ Build Tools ##############################
-RUN python -m pip install cmake meson ninja conan
-
-############################## LLVM? ##############################
+RUN python -m pip install cmake==3.31.1 meson==1.6.0 ninja==1.11.1.1 conan==2.10.0
 
 ############################## C++ Dependencies ##############################
 
@@ -56,9 +63,6 @@ WORKDIR ${DEPS_DIR}
 
 ############################## CONAN DEPS ##############################
 ENV CONAN_HOME=/usr/local/app/conan/home
-
-# Add dependencies to the runtime loader's path
-# ENV LD_LIBRARY_PATH=/opt/deps/libtorch/lib/:${LD_LIBRARY_PATH}
 
 # Set the workdir to the src directory
 ENV WORKDIR=/usr/local/app

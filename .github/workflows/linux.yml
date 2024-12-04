@@ -1,10 +1,8 @@
 name: Linux Build
 
-on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+on: push
+
+env:
 
 jobs:
   build:
@@ -14,25 +12,32 @@ jobs:
       # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this to true when your workflow is stable.
       fail-fast: false
 
-      # Set up a matrix to run the following 3 configurations:
-      # 1. <Windows, Release, latest MSVC compiler toolchain on the default runner image, default generator>
-      # 2. <Linux, Release, latest GCC compiler toolchain on the default runner image, default generator>
-      # 3. <Linux, Release, latest Clang compiler toolchain on the default runner image, default generator>
-      #
-      # To add more build types (Release, Debug, RelWithDebInfo, etc.) customize the build_type list.
+      # Set up a build matrix
       matrix:
         os: [ubuntu-latest]
         build_type: [Release]
+        compiler: [gcc, clang]
         include:
-          - cxx: g++-13
+          - cc: gcc-13
+            cxx: g++-13
             std: 20
+            compiler: gcc
+            compiler_version: 13
+            libcxx: libstdc++11
             install: sudo apt install -y g++-13
-          - cxx: clang++-19
+          - cc: clang-19
+            cxx: clang++-19
             std: 20
+            compiler: clang
+            compiler_version: 19
+            libcxx: libc++
             install: |
               wget https://apt.llvm.org/llvm.sh
               sudo bash ./llvm.sh 19
-              sudo apt install clang-19
+              sudo apt install -y clang-format clang-tidy clang-tools clang clangd \
+                libc++1 libc++abi1 libclang1 \
+                libomp5 lld lldb \
+                llvm-runtime llvm
 
     steps:
       - uses: actions/checkout@v4
@@ -49,10 +54,13 @@ jobs:
 
       - name: Set Compiler Environment Variables
         run: |
+          echo "CC=${{ matrix.cc }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV
 
       - name: Install ninja-build tool
         uses: seanmiddleditch/gha-setup-ninja@v5
+        with:
+          version: 1.11.1
 
       - name: Install Conan
         id: conan
@@ -65,7 +73,12 @@ jobs:
         # We build the conan dependencies in release but install the config relating to the matrix build type.
         run: |
           conan profile detect
-          conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps --build missing -s "&:build_type=${{matrix.build_type}}" -s :build_type=Release
+          conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps \
+            --build missing \
+            -s "&:build_type=${{ matrix.build_type }}" -s :build_type=Release
+            -s compiler=${{ matrix.compiler }} \
+            -s compiler.version=${{ matrix.compiler_version }} \
+            -s compiler.libcxx=${{ matrix.libcxx }}
 
       - name: CMake Configure
         run: >
@@ -74,13 +87,14 @@ jobs:
           -G Ninja
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
           -DCMAKE_CXX_STANDARD=${{ matrix.std }}
+          -DCMAKE_CXX_FLAGS=${{ matrix.compiler == 'clang' && '-stdlib=libc++' || '' }}
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DBUILD_EXAMPLES=ON
 
       - name: Build
         run: |
           threads=`nproc`
-          cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{matrix.build_type}} --parallel $threads
+          cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel $threads
 
     # - name: Test
     #   working-directory: ${{ steps.strings.outputs.build-output-dir }}

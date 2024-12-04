@@ -23,7 +23,7 @@ make build
 ### Using GPROF:
 ```bash
 # Build with GPROF data
-make build_gprof
+make build_gcc_profile
 # Run the program of interest (simple example)
 ./build/src/examples/ex_simple
 # Convert

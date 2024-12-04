@@ -29,6 +29,8 @@ std::atomic_flag cancel = ATOMIC_FLAG_INIT;
 class SimpleDataStreamProcessor : public cds::StreamProcessor
 {
 public:
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+
     virtual ~SimpleDataStreamProcessor() { CDS_LOG_DTOR("{} DTOR: sum = {}", className(), _sum); }
 
     virtual auto processData(const cds::SharedDataBlock& sdb) -> cds::SharedDataBlock override
@@ -37,7 +39,7 @@ public:
             return sdb;
 
         // Get a read-only copy of the data
-        const auto& data = sdb.asType<DataT>();
+        auto data = sdb.asType<DataT>();
         // Calculate the sum of the data
         _sum += std::accumulate(data.cbegin(), data.cend(), 0ul);
         return sdb;
@@ -51,7 +53,7 @@ private:
 class DataStreamPassThrough : public cds::StreamProcessor
 {
 public:
-    CPPDATASTREAM_CLASS_NAME();
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
     explicit DataStreamPassThrough(uint64_t index) : _index(index) {}
 
@@ -66,7 +68,7 @@ private:
 class DataStreamThroughputMonitor : public cds::StreamProcessor
 {
 public:
-    CPPDATASTREAM_CLASS_NAME();
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
     CDS_LOG_DTOR_VFUNC(DataStreamThroughputMonitor);
 
@@ -132,15 +134,18 @@ int main(int argc, char* argv[])
     LOG_INFO("Processing {} blocks of {} bytes each", numBlocks, numBytesPerBlock);
 
     // Create a DataStreamSource that we will push data into.
-    auto tb = std::make_shared<cds::StreamThreadedBuffer>(1'000, false);
+    auto tb = std::make_shared<cds::StreamThreadedBuffer>(1'000, true);
 
     // Connect downstream datastreams to the buffer
     std::shared_ptr<cds::StreamProcessor> downstream = tb;
     for(uint32_t i = 0; i < numStreams; ++i)
         downstream = downstream->connect(std::make_unique<DataStreamPassThrough>(i));
 
-    // Add simple processor datastream (disabled for now...
+    // Add simple processor datastream
     // downstream = downstream->connect(std::make_unique<SimpleDataStreamProcessor>());
+
+    // Another threaded buffer
+    downstream = downstream->connect(std::make_unique<cds::StreamThreadedBuffer>(1'000, true));
 
     // Add throughput monitor
     downstream->connect(std::make_unique<DataStreamThroughputMonitor>());
@@ -150,6 +155,10 @@ int main(int argc, char* argv[])
     downstream->connect(sink);
 
     auto vec = DataT(numBytesPerBlock, 1);
+    // Create a writable data block;
+    auto wb = cds::WritableDataBlock();
+    // Set the data
+    wb.setData(vec);
 
     auto start = std::chrono::steady_clock::now();
 
@@ -157,16 +166,11 @@ int main(int argc, char* argv[])
     for(uint64_t i = 0; i < numBlocks; ++i) {
         if(cancel.test())
             break;
-        // Create a writable data block;
-        auto wb = cds::WritableDataBlock();
-        // Set the data
-        wb.setData(vec);
-        // Push the data
         tb->pushData(wb);
     }
 
     // Push an EndOfProcessing block
-    auto wb = cds::WritableDataBlock();
+    wb = cds::WritableDataBlock();
     wb.setEndOfProcessing(cds::EopStatus{});
     tb->pushData(wb);
 
