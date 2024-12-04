@@ -23,10 +23,10 @@ jobs:
             compiler_version: 13
             libcxx: libstdc++11
             install: |
-              apt update && apt install -y software-properties-common
-              add-apt-repository ppa:ubuntu-toolchain-r/test
-              apt update
-              apt install -y g++-13
+              sudo apt update && sudo apt install -y software-properties-common
+              sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+              sudo apt update
+              sudo apt install -y g++-13
           - cc: clang-19
             cxx: clang++-19
             std: 20
