@@ -83,11 +83,11 @@ jobs:
       - name: Build Conan Dependencies
         # We build the conan dependencies in release but install the config relating to the matrix build type.
         run: |
-          conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps /
-            --build missing /
-            -s "&:build_type=${{ matrix.build_type }}" -s :build_type=Release /
-            -s compiler=${{ matrix.compiler }} /
-            -s compiler.version=${{ matrix.compiler_version }} /
+          conan install ${{ github.workspace }} --output-folder=${{ github.workspace }}/deps \
+            --build missing \
+            -s "&:build_type=${{ matrix.build_type }}" -s :build_type=Release \
+            -s compiler=${{ matrix.compiler }} \
+            -s compiler.version=${{ matrix.compiler_version }} \
             -s compiler.libcxx=${{ matrix.libcxx }}
 
       - name: CMake Configure
