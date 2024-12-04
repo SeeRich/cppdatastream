@@ -10,10 +10,13 @@ Simple repo exploring the performance of a general-use, block-based processing p
 just docker-build
 just docker-run
 # Now inside docker container
-conan profile detect # Only first time (modify profile to your liking ./conan/home/profiles/default)
-make deps
-make build
+# Build with GCC (clean build)
+make build_gcc
+# OR with Clang
+make build_clang
 ```
+
+* Trigger a rebuild using: `make cmake_build`
 
 ### DEVELOPERS:
 
