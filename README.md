@@ -16,7 +16,7 @@ make build_gcc
 make build_clang
 ```
 
-* Trigger a rebuild using: `make cmake_build`
+* Trigger a rebuild (not a clean build) using: `make cmake_build`
 
 ### DEVELOPERS:
 

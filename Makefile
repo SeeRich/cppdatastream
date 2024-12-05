@@ -18,7 +18,7 @@ cmake_config: FORCE
 		-DBUILD_EXAMPLES=ON
 
 cmake_build: FORCE
-	cmake --build build -v
+	cmake --build build
 
 cmake_install: FORCE
 	cmake --install build
