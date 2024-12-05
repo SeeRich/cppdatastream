@@ -17,29 +17,28 @@
 #include <new>
 #include <string>
 
-using BaseDataT = std::any;
-
 using namespace std;
 namespace cds = cppdatastream;
 
+// Aligned datablock of bytes
 using DataT = AlignedVector<uint8_t>;
 
 std::atomic_flag cancel = ATOMIC_FLAG_INIT;
 
-class SimpleDataStreamProcessor : public cds::StreamProcessor
+class SimpleAccumulator : public cds::StreamProcessor<DataT, DataT>
 {
 public:
     CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
-    virtual ~SimpleDataStreamProcessor() { CDS_LOG_DTOR("{} DTOR: sum = {}", className(), _sum); }
+    virtual ~SimpleAccumulator() { CDS_LOG_DTOR("{} DTOR: sum = {}", className(), _sum); }
 
-    virtual auto processData(const cds::SharedDataBlock& sdb) -> cds::SharedDataBlock override
+    virtual auto processData(const cds::SharedDataBlock<DataT>& sdb) -> cds::SharedDataBlock<DataT> override
     {
         if(sdb.isEndOfProcessing())
             return sdb;
 
         // Get a read-only copy of the data
-        auto data = sdb.asType<DataT>();
+        const auto& data = sdb.data();
         // Calculate the sum of the data
         _sum += std::accumulate(data.cbegin(), data.cend(), 0ul);
         return sdb;
@@ -50,7 +49,7 @@ private:
 };
 
 // Pass through datastream that does no processing
-class DataStreamPassThrough : public cds::StreamProcessor
+class DataStreamPassThrough : public cds::StreamProcessor<DataT, DataT>
 {
 public:
     CPPDATASTREAM_CLASS_NAME_OVERRIDE();
@@ -59,26 +58,30 @@ public:
 
     virtual ~DataStreamPassThrough() { CDS_LOG_DTOR("{} DTOR: index: {}", className(), _index); }
 
-    virtual auto processData(const cds::SharedDataBlock& sdb) -> cds::SharedDataBlock override { return sdb; }
+    virtual auto processData(const cds::SharedDataBlock<DataT>& sdb) -> cds::SharedDataBlock<DataT> override
+    {
+        return sdb;
+    }
 
 private:
     [[maybe_unused]] size_t _index{0};
 };
 
-class DataStreamThroughputMonitor : public cds::StreamProcessor
+template <typename T>
+class DataStreamThroughputMonitor : public cds::StreamProcessor<T, T>
 {
 public:
     CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
     CDS_LOG_DTOR_VFUNC(DataStreamThroughputMonitor);
 
-    virtual auto processData(const cds::SharedDataBlock& sdb) -> cds::SharedDataBlock override
+    virtual auto processData(const cds::SharedDataBlock<T>& sdb) -> cds::SharedDataBlock<T> override
     {
         if(sdb.isEndOfProcessing())
             return sdb;
 
         // Get a read-only copy of the data
-        const auto& data = sdb.asType<DataT>();
+        const auto& data = sdb.data();
         _throughput_bytes += data.size();
 
         processThroughput();
@@ -103,6 +106,13 @@ private:
     uint64_t _throughput_bytes{0};
 };
 
+// This simple example demonstrates how to create a simple data processing pipeline using cppdatastream.
+// The pipeline consists of a StreamThreadedBuffer -> SimpleAccumulator (optional, default=off) -> DataStreamThroughputMonitor -> StreamSink
+// Data blocks are pushed manually into the StreamThreadedBuffer and the pipeline processes them.
+// This example is intentionally simple and doesn't include a DataStreamSource since that is usually the hardest part to implement.
+// Also, this example isn't optimized for performance. Each data block is allocated by the main thread before passing it to the pipeline.
+// Ideally, the data blocks would be pre-allocated and reused to avoid the overhead of memory allocation.
+
 int main(int argc, char* argv[])
 {
     // Setup signal handler
@@ -120,13 +130,13 @@ int main(int argc, char* argv[])
                          fmt::format("Version: {}", fmt::format(fg(fmt::terminal_color::green), "{}", "0.1.0")));
     // Number of data blocks to pass through the pipeline
     uint32_t numBlocks = 10'000'000;
-    app.add_option<uint32_t>("-d,--datablocks", numBlocks, "Number of data blocks");
+    app.add_option("-d,--datablocks", numBlocks, "Number of data blocks");
     // Number of datastreams to use in the pipeline
-    uint32_t numStreams = 30;
-    app.add_option<uint32_t>("-s,--streams", numStreams, "Number of data streams");
+    bool withAccumulator{false};
+    app.add_flag("-a,--accumulator", withAccumulator, "Add an accumulator to the pipeline");
     // Number of bytes in each block
     uint32_t numBytesPerBlock = 16384;
-    app.add_option<uint32_t>("-b,--bytes", numBytesPerBlock, "Number of bytes per block");
+    app.add_option("-b,--bytes", numBytesPerBlock, "Number of bytes per block");
     // Parse the CLI string
     CLI11_PARSE(app, argc, argv);
 
@@ -134,31 +144,28 @@ int main(int argc, char* argv[])
     LOG_INFO("Processing {} blocks of {} bytes each", numBlocks, numBytesPerBlock);
 
     // Create a DataStreamSource that we will push data into.
-    auto tb = std::make_shared<cds::StreamThreadedBuffer>(1'000, true);
+    auto tb = std::make_shared<cds::StreamThreadedBuffer<DataT>>(1'000);
 
-    // Connect downstream datastreams to the buffer
-    std::shared_ptr<cds::StreamProcessor> downstream = tb;
-    for(uint32_t i = 0; i < numStreams; ++i)
-        downstream = downstream->connect(std::make_unique<DataStreamPassThrough>(i));
+    std::shared_ptr<cds::StreamProcessor<DataT, DataT>> ds = tb;
 
     // Add simple processor datastream
-    // downstream = downstream->connect(std::make_unique<SimpleDataStreamProcessor>());
-
-    // Another threaded buffer
-    downstream = downstream->connect(std::make_unique<cds::StreamThreadedBuffer>(1'000, true));
+    if(withAccumulator) {
+        auto accum = std::make_shared<SimpleAccumulator>();
+        ds->connect(accum);
+        ds = accum;
+    }
 
     // Add throughput monitor
-    downstream->connect(std::make_unique<DataStreamThroughputMonitor>());
+    auto throughputMonitor = std::make_shared<DataStreamThroughputMonitor<DataT>>();
+    ds->connect(throughputMonitor);
+    ds = throughputMonitor;
 
     // Add a sink to wait for the end of processing
-    auto sink = std::make_shared<cds::StreamSink>();
-    downstream->connect(sink);
+    auto sink = std::make_shared<cds::StreamSink<DataT>>();
+    ds->connect(sink);
 
+    // Allocate an aligned vector of bytes filled with ones1
     auto vec = DataT(numBytesPerBlock, 1);
-    // Create a writable data block;
-    auto wb = cds::WritableDataBlock();
-    // Set the data
-    wb.setData(vec);
 
     auto start = std::chrono::steady_clock::now();
 
@@ -166,11 +173,17 @@ int main(int argc, char* argv[])
     for(uint64_t i = 0; i < numBlocks; ++i) {
         if(cancel.test())
             break;
+        // Create a writable data block;
+        auto wb = cds::WritableDataBlock<DataT>();
+        // Set the data (copy the vector)
+        wb.setData(vec);
+        // Push the data block
         tb->pushData(wb);
     }
 
     // Push an EndOfProcessing block
-    wb = cds::WritableDataBlock();
+    auto wb = cds::WritableDataBlock<DataT>();
+    wb = cds::WritableDataBlock<DataT>();
     wb.setEndOfProcessing(cds::EopStatus{});
     tb->pushData(wb);
 

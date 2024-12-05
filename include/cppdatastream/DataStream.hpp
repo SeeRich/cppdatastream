@@ -153,6 +153,7 @@ struct EopStatus
     std::string message;
 };
 
+template <typename T>
 class SharedDataBlock
 {
 public:
@@ -160,22 +161,7 @@ public:
 
     virtual ~SharedDataBlock() = default;
 
-    std::string typeName() const { return _data ? _data->type().name() : "empty"; }
-
-    template <typename T>
-    auto isType() const -> bool
-    {
-        return _data ? typeid(T) == _data->type() : false;
-    }
-
-    template <typename T>
-    auto asType() const -> const T&
-    {
-        if(!_data) {
-            throw std::bad_any_cast();
-        }
-        return std::any_cast<const T&>(*_data);
-    }
+    auto data() const -> const T& { return *_data; }
 
     bool isEmpty() const { return _data.operator bool(); }
 
@@ -185,12 +171,13 @@ public:
 
 protected:
     /// Shared data block
-    std::shared_ptr<std::any> _data;
+    std::shared_ptr<T> _data;
     /// @brief End of processing
     std::optional<EopStatus> _eop;
 };
 
-class WritableDataBlock : public SharedDataBlock
+template <typename T>
+class WritableDataBlock : public SharedDataBlock<T>
 {
 public:
     WritableDataBlock() = default;
@@ -199,9 +186,9 @@ public:
 
     void setEndOfProcessing(const EopStatus& eop) { this->_eop = eop; }
 
-    void setData(const std::any& data) { _data = std::make_shared<std::any>(std::any(data)); }
+    void setData(const T& data) { SharedDataBlock<T>::_data = std::make_shared<T>(data); }
 
-    auto asShared() const -> SharedDataBlock { return *this; }
+    auto asShared() const -> SharedDataBlock<T> { return *this; }
 
     static auto createEos(const EopStatus& eop) -> WritableDataBlock
     {
@@ -211,6 +198,7 @@ public:
     }
 };
 
+template <typename IN_T>
 class StreamVisitor
 {
 public:
@@ -218,10 +206,22 @@ public:
 
     virtual ~StreamVisitor() {}
 
-    virtual bool visitData(const SharedDataBlock& sdb) = 0;
+    virtual bool visitData(const SharedDataBlock<IN_T>& sdb) = 0;
 };
 
-class StreamProcessor
+template <typename IN_T>
+class StreamPushable
+{
+public:
+    CPPDATASTREAM_CLASS_NAME();
+
+    virtual ~StreamPushable() {}
+
+    virtual void pushData(const SharedDataBlock<IN_T>& sdb) = 0;
+};
+
+template <typename IN_T, typename OUT_T>
+class StreamProcessor : public StreamPushable<IN_T>
 {
 public:
     CPPDATASTREAM_CLASS_NAME();
@@ -229,18 +229,15 @@ public:
     virtual ~StreamProcessor() {}
 
     // Derived classes must implement this method
-    virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock = 0;
+    virtual auto processData(const SharedDataBlock<IN_T>& sdb) -> SharedDataBlock<OUT_T> = 0;
 
-    // Connects and returns the downstream processor
-    virtual auto connect(const std::shared_ptr<StreamProcessor>& processor) -> std::shared_ptr<StreamProcessor>
-    {
-        processors.push_back(processor);
-        return processor;
-    }
+    // Connects a StreamPushable to this processor
+    virtual void connect(const std::shared_ptr<StreamPushable<IN_T>>& processor) { processors.push_back(processor); }
 
-    virtual void connect(const std::shared_ptr<StreamVisitor>& visitor) { visitors.push_back(visitor); }
+    // Connects a StreamVisitor to this processor
+    virtual void connect(const std::shared_ptr<StreamVisitor<IN_T>>& visitor) { visitors.push_back(visitor); }
 
-    virtual void pushData(const SharedDataBlock& sdb)
+    virtual void pushData(const SharedDataBlock<IN_T>& sdb)
     {
         // If we've already had an error, don't process any more data
         if(_had_error)
@@ -253,7 +250,7 @@ public:
         if(output.isEndOfProcessing() && output.eopStatus().value().type == EopError) {
             CDS_LOG_ERROR("{}: failed to process dataBlock type: {}",
                           detail::demangleName(typeid(*this).name()),
-                          detail::demangleName(sdb.typeName()));
+                          detail::demangleName(typeid(sdb).name()));
             _had_error = true;
         }
 
@@ -262,7 +259,7 @@ public:
             if(!visitor->visitData(output))
                 CDS_LOG_ERROR("{}: failed to visit dataBlock type: {}",
                               detail::demangleName(typeid(visitor).name()),
-                              detail::demangleName(sdb.typeName()));
+                              detail::demangleName(typeid(sdb).name()));
         }
 
         // Push the processed data to the connected processors
@@ -272,10 +269,11 @@ public:
 protected:
     std::string _name;
     bool _had_error{false};
-    std::vector<std::shared_ptr<StreamVisitor>> visitors;
-    std::vector<std::shared_ptr<StreamProcessor>> processors;
+    std::vector<std::shared_ptr<StreamVisitor<IN_T>>> visitors;
+    std::vector<std::shared_ptr<StreamPushable<IN_T>>> processors;
 };
 
+template <typename OUT_T>
 class StreamSource
 {
 public:
@@ -295,21 +293,24 @@ public:
 
 /// Passthrough processor, useful to bridge specific elements that interface only with
 /// StreamProcessors
-class StreamNoopProcessor : public StreamProcessor
+template <typename T>
+class StreamNoopProcessor : public StreamProcessor<T, T>
 {
 public:
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
     CDS_LOG_DTOR_VFUNC(StreamNoopProcessor);
 
 protected:
-    virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock override { return sdb; }
+    virtual auto processData(const SharedDataBlock<T>& sdb) -> SharedDataBlock<T> override { return sdb; }
 };
 
-class StreamThreadedBuffer : public StreamProcessor
+template <typename T>
+class StreamThreadedBuffer : public StreamProcessor<T, T>
 {
 public:
-    explicit StreamThreadedBuffer(size_t maxBlocks = 100, bool blockOnFull = false)
-        : _queue(maxBlocks), _block_on_full(blockOnFull)
-    {}
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+
+    explicit StreamThreadedBuffer(size_t maxBlocks = 100) : _queue(maxBlocks) {}
 
     virtual ~StreamThreadedBuffer()
     {
@@ -318,7 +319,7 @@ public:
         CDS_LOG_DTOR("{} DTOR", className());
     }
 
-    virtual void pushData(const SharedDataBlock& sdb) override
+    virtual void pushData(const SharedDataBlock<T>& sdb) override
     {
         // If we haven't started the thread yet, do it now
         if(!_thread_started) {
@@ -326,59 +327,54 @@ public:
             _thread_started = true;
         }
 
-        // Push data into the queue
-        if(_block_on_full) {
-            // Busy wait... (i.e. block until space is available)
-            size_t count = 0;
-            while(!_queue.try_enqueue(sdb)) {
-                // Log a warning if the buffer is being completely obliterated
-                if(500 == count) {
-                    CDS_LOG_WARN("StreamThreadedBuffer: blocking because buffer is full");
-                    count = 0;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                count++;
+        // Busy wait... (i.e. block until space is available)
+        size_t count = 0;
+        while(!_queue.try_enqueue(sdb)) {
+            // Log a warning if the buffer is being completely obliterated
+            if(500 == count) {
+                CDS_LOG_WARN("StreamThreadedBuffer: blocking because buffer is full");
+                count = 0;
             }
-        } else {
-            // Grow the queue to accomadate the new element
-            _queue.enqueue(sdb);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            count++;
         }
     }
 
 protected:
-    virtual auto processData(const SharedDataBlock& sdb) -> SharedDataBlock override final { return sdb; }
+    virtual auto processData(const SharedDataBlock<T>& sdb) -> SharedDataBlock<T> override final { return sdb; }
 
 private:
     void run()
     {
-        SharedDataBlock sdb;
+        SharedDataBlock<T> sdb;
         do {
             _queue.wait_dequeue(sdb);
-            StreamProcessor::pushData(sdb);
+            StreamProcessor<T, T>::pushData(sdb);
             if(sdb.isEndOfProcessing())
                 break;
         } while(true);
     }
 
     /// @brief SPSC thread-safe queue used to buffer SharedDataBlocks
-    moodycamel::BlockingReaderWriterQueue<SharedDataBlock> _queue;
-    /// Should the thread buffer block the input thread when the queue is full?
-    std::atomic_bool _block_on_full{false};
+    moodycamel::BlockingReaderWriterQueue<SharedDataBlock<T>> _queue;
     /// Thread used to push blocks downstream
     std::thread _thread;
     /// Background thread started
     bool _thread_started{false};
 };
 
-class OnEosVistor : public StreamVisitor
+template <typename T>
+class OnEosVistor : public StreamVisitor<T>
 {
 public:
+    CPPDATASTREAM_CLASS_NAME();
+
     OnEosVistor(std::function<void()> func) { _func = func; }
 
     CDS_LOG_DTOR_VFUNC(OnEosVistor);
 
 private:
-    virtual bool visitData(const SharedDataBlock& sdb) override
+    virtual bool visitData(const SharedDataBlock<T>& sdb) override
     {
         if(sdb.isEndOfProcessing())
             _func();
@@ -388,30 +384,34 @@ private:
     std::function<void()> _func;
 };
 
-class AnonymousVisitor : public StreamVisitor
+template <typename T>
+class AnonymousVisitor : public StreamVisitor<T>
 {
 public:
-    using AnonymousFunc = std::function<bool(const SharedDataBlock&)>;
+    using AnonymousFunc = std::function<bool(const SharedDataBlock<T>&)>;
+
+    CPPDATASTREAM_CLASS_NAME();
 
     AnonymousVisitor(AnonymousFunc func) { _func = func; }
 
     CDS_LOG_DTOR_VFUNC(AnonymousVisitor);
 
 private:
-    virtual bool visitData(const SharedDataBlock& sdb) override { return _func(sdb); };
+    virtual bool visitData(const SharedDataBlock<T>& sdb) override { return _func(sdb); };
 
     AnonymousFunc _func;
 };
 
 /// @brief StreamSink is a visitor that waits for an EndOfProcessing block and reports the status
-class StreamSink final : public StreamVisitor
+template <typename T>
+class StreamSink final : public StreamVisitor<T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
     CDS_LOG_DTOR_VFUNC(StreamSink);
 
-    virtual bool visitData(const SharedDataBlock& sdb) override
+    virtual bool visitData(const SharedDataBlock<T>& sdb) override
     {
         if(sdb.isEndOfProcessing())
             _func(sdb.eopStatus().value());
