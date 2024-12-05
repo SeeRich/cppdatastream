@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            $HOME/.conan2
+            ${{ github.workspace }}/deps
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.compiler_version }}-${{ hashFiles('conanfile.py') }}
 
       - name: Configure Conan
