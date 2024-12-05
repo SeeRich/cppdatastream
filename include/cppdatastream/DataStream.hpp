@@ -78,7 +78,7 @@ public:
 class NullLogger : public ILogger
 {
 public:
-    inline void log(LogLevel level, const std::string& message) override {}
+    inline void log(LogLevel, const std::string&) override {}
 };
 
 // Global logger
@@ -224,7 +224,7 @@ template <typename IN_T, typename OUT_T>
 class StreamProcessor : public StreamPushable<IN_T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME();
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
     virtual ~StreamProcessor() {}
 
@@ -237,7 +237,7 @@ public:
     // Connects a StreamVisitor to this processor
     virtual void connect(const std::shared_ptr<StreamVisitor<IN_T>>& visitor) { visitors.push_back(visitor); }
 
-    virtual void pushData(const SharedDataBlock<IN_T>& sdb)
+    virtual void pushData(const SharedDataBlock<IN_T>& sdb) override
     {
         // If we've already had an error, don't process any more data
         if(_had_error)
@@ -407,7 +407,7 @@ template <typename T>
 class StreamSink final : public StreamVisitor<T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME();
+    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
 
     CDS_LOG_DTOR_VFUNC(StreamSink);
 

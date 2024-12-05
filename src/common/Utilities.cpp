@@ -18,51 +18,51 @@ namespace detail {
 // https://github.com/jeremy-rifkin/cpptrace/blob/main/docs/signal-safe-tracing.md
 
 // This is just a utility I like, it makes the pipe API more expressive.
-struct pipe_t
-{
-    union {
-        struct
-        {
-            int read_end;
-            int write_end;
-        };
-        int data[2];
-    };
-};
+// struct pipe_t
+// {
+//     union {
+//         struct
+//         {
+//             int read_end;
+//             int write_end;
+//         };
+//         int data[2];
+//     };
+// };
 
-void do_signal_safe_trace(cpptrace::frame_ptr* buffer, std::size_t count)
-{
-    // Setup pipe and spawn child
-    pipe_t input_pipe;
-    std::ignore = pipe(input_pipe.data);
-    const pid_t pid = fork();
-    if(pid == -1) {
-        const char* fork_failure_message = "fork() failed\n";
-        std::ignore = write(STDERR_FILENO, fork_failure_message, strlen(fork_failure_message));
-        return;
-    }
-    if(pid == 0) {  // child
-        dup2(input_pipe.read_end, STDIN_FILENO);
-        close(input_pipe.read_end);
-        close(input_pipe.write_end);
-        execl("signal_tracer", "signal_tracer", nullptr);
-        const char* exec_failure_message =
-            "exec(signal_tracer) failed: Make sure the signal_tracer executable is in "
-            "the current working directory and the binary's permissions are correct.\n";
-        std::ignore = write(STDERR_FILENO, exec_failure_message, strlen(exec_failure_message));
-        _exit(1);
-    }
-    // Resolve to safe_object_frames and write those to the pipe
-    for(std::size_t i = 0; i < count; i++) {
-        cpptrace::safe_object_frame frame;
-        cpptrace::get_safe_object_frame(buffer[i], &frame);
-        std::ignore = write(input_pipe.write_end, &frame, sizeof(frame));
-    }
-    close(input_pipe.read_end);
-    close(input_pipe.write_end);
-    // Wait for child
-    waitpid(pid, nullptr, 0);
-}
+// void do_signal_safe_trace(cpptrace::frame_ptr* buffer, std::size_t count)
+// {
+//     // Setup pipe and spawn child
+//     pipe_t input_pipe;
+//     std::ignore = pipe(input_pipe.data);
+//     const pid_t pid = fork();
+//     if(pid == -1) {
+//         const char* fork_failure_message = "fork() failed\n";
+//         std::ignore = write(STDERR_FILENO, fork_failure_message, strlen(fork_failure_message));
+//         return;
+//     }
+//     if(pid == 0) {  // child
+//         dup2(input_pipe.read_end, STDIN_FILENO);
+//         close(input_pipe.read_end);
+//         close(input_pipe.write_end);
+//         execl("signal_tracer", "signal_tracer", nullptr);
+//         const char* exec_failure_message =
+//             "exec(signal_tracer) failed: Make sure the signal_tracer executable is in "
+//             "the current working directory and the binary's permissions are correct.\n";
+//         std::ignore = write(STDERR_FILENO, exec_failure_message, strlen(exec_failure_message));
+//         _exit(1);
+//     }
+//     // Resolve to safe_object_frames and write those to the pipe
+//     for(std::size_t i = 0; i < count; i++) {
+//         cpptrace::safe_object_frame frame;
+//         cpptrace::get_safe_object_frame(buffer[i], &frame);
+//         std::ignore = write(input_pipe.write_end, &frame, sizeof(frame));
+//     }
+//     close(input_pipe.read_end);
+//     close(input_pipe.write_end);
+//     // Wait for child
+//     waitpid(pid, nullptr, 0);
+// }
 
 void handler(int signo)
 {
@@ -86,7 +86,7 @@ void warmup_cpptrace()
 {
     // This is done for any dynamic-loading shenanigans
     cpptrace::frame_ptr buffer[10];
-    std::size_t count = cpptrace::safe_generate_raw_trace(buffer, 10);
+    cpptrace::safe_generate_raw_trace(buffer, 10);
     cpptrace::safe_object_frame frame;
     cpptrace::get_safe_object_frame(buffer[0], &frame);
 }
