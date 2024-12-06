@@ -217,7 +217,7 @@ AE_FORCEINLINE void fence(memory_order order) AE_NO_TSAN
     #endif
 }  // end namespace moodycamel
 #else
-    // Use standard library of atomics
+   // Use standard library of atomics
     #include <atomic>
 
 namespace moodycamel {

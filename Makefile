@@ -24,20 +24,20 @@ cmake_build: FORCE
 cmake_install: FORCE
 	cmake --install build
 
-build_gcc: CONAN_CONSUMER_BUILD_TYPE=Release
+build_gcc: CONAN_CONSUMER_BUILD_TYPE=RelWithDebInfo
 build_gcc: CONAN_PROFILE=gcc
 build_gcc: CC=gcc-13
 build_gcc: CXX=g++-13
 build_gcc: CXX_FLAGS=
-build_gcc: BUILD_TYPE=Release
+build_gcc: BUILD_TYPE=RelWithDebInfo
 build_gcc: clean conan_deps cmake_config cmake_build cmake_install
 
-build_clang: CONAN_CONSUMER_BUILD_TYPE=Release
+build_clang: CONAN_CONSUMER_BUILD_TYPE=RelWithDebInfo
 build_clang: CONAN_PROFILE=clang
 build_clang: CC=clang-19
 build_clang: CXX=clang++-19
 build_clang: CXX_FLAGS="-stdlib=libc++"
-build_clang: BUILD_TYPE=Release
+build_clang: BUILD_TYPE=RelWithDebInfo
 build_clang: clean conan_deps cmake_config cmake_build cmake_install
 
 # Build with gcc and gprof support
@@ -48,6 +48,12 @@ build_gcc_profile: CC=gcc-13
 build_gcc_profile: CXX=g++-13
 build_gcc_profile: BUILD_TYPE=RelWithDebInfo
 build_gcc_profile: clean conan_deps cmake_config cmake_build cmake_install
+
+format: FORCE
+	 cmake --build build --target format_code
+
+lint: FORCE
+	run-clang-tidy -p build -checks=-*,clang-analyzer-*,-clang-analyzer-osx* -quiet
 
 clean:
 	@rm -rf install

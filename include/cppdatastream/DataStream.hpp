@@ -6,7 +6,7 @@
 #ifdef _MSC_VER
     #pragma warning(push, 1)
 #endif
-#include "cppdatastream/external/queues/readerwriterqueue.h"
+#include "moodycamel/readerwritercircularbuffer.h"
 #ifdef _MSC_VER
     #pragma warning(pop)
 #endif
@@ -127,10 +127,7 @@ void setLogger(std::shared_ptr<ILogger> logger)
 #endif
 
 #define CPPDATASTREAM_CLASS_NAME() \
-    virtual std::string className() const { return cppdatastream::detail::demangleName(typeid(*this).name()); }
-
-#define CPPDATASTREAM_CLASS_NAME_OVERRIDE() \
-    virtual std::string className() const override { return cppdatastream::detail::demangleName(typeid(*this).name()); }
+    std::string className() const { return cppdatastream::detail::demangleName(typeid(*this).name()); }
 
 namespace cppdatastream {
 
@@ -198,16 +195,7 @@ public:
     }
 };
 
-template <typename IN_T>
-class StreamVisitor
-{
-public:
-    CPPDATASTREAM_CLASS_NAME();
-
-    virtual ~StreamVisitor() {}
-
-    virtual bool visitData(const SharedDataBlock<IN_T>& sdb) = 0;
-};
+namespace detail {
 
 template <typename IN_T>
 class StreamPushable
@@ -220,19 +208,35 @@ public:
     virtual void pushData(const SharedDataBlock<IN_T>& sdb) = 0;
 };
 
-template <typename IN_T, typename OUT_T>
-class StreamProcessor : public StreamPushable<IN_T>
+}  // namespace detail
+
+template <typename IN_T>
+class StreamVisitor
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
-    virtual ~StreamProcessor() {}
+    virtual ~StreamVisitor() {}
+
+    virtual bool visitData(const SharedDataBlock<IN_T>& sdb) = 0;
+};
+
+template <typename IN_T, typename OUT_T>
+class StreamProcessor : public detail::StreamPushable<IN_T>
+{
+public:
+    CPPDATASTREAM_CLASS_NAME();
+
+    CDS_LOG_DTOR_VFUNC(StreamProcessor);
 
     // Derived classes must implement this method
     virtual auto processData(const SharedDataBlock<IN_T>& sdb) -> SharedDataBlock<OUT_T> = 0;
 
     // Connects a StreamPushable to this processor
-    virtual void connect(const std::shared_ptr<StreamPushable<IN_T>>& processor) { processors.push_back(processor); }
+    virtual void connect(const std::shared_ptr<detail::StreamPushable<IN_T>>& processor)
+    {
+        processors.push_back(processor);
+    }
 
     // Connects a StreamVisitor to this processor
     virtual void connect(const std::shared_ptr<StreamVisitor<IN_T>>& visitor) { visitors.push_back(visitor); }
@@ -270,7 +274,7 @@ protected:
     std::string _name;
     bool _had_error{false};
     std::vector<std::shared_ptr<StreamVisitor<IN_T>>> visitors;
-    std::vector<std::shared_ptr<StreamPushable<IN_T>>> processors;
+    std::vector<std::shared_ptr<detail::StreamPushable<IN_T>>> processors;
 };
 
 template <typename OUT_T>
@@ -297,7 +301,7 @@ template <typename T>
 class StreamNoopProcessor : public StreamProcessor<T, T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
     CDS_LOG_DTOR_VFUNC(StreamNoopProcessor);
 
 protected:
@@ -308,7 +312,7 @@ template <typename T>
 class StreamThreadedBuffer : public StreamProcessor<T, T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
     explicit StreamThreadedBuffer(size_t maxBlocks = 100) : _queue(maxBlocks) {}
 
@@ -327,16 +331,8 @@ public:
             _thread_started = true;
         }
 
-        // Busy wait... (i.e. block until space is available)
-        size_t count = 0;
-        while(!_queue.try_enqueue(sdb)) {
-            // Log a warning if the buffer is being completely obliterated
-            if(500 == count) {
-                CDS_LOG_WARN("StreamThreadedBuffer: blocking because buffer is full");
-                count = 0;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            count++;
+        // Wait for the queue to have space
+        while(!_queue.wait_enqueue_timed(sdb, std::chrono::milliseconds(1))) {
         }
     }
 
@@ -348,6 +344,7 @@ private:
     {
         SharedDataBlock<T> sdb;
         do {
+            // We assume there will always be an EOP block at the end
             _queue.wait_dequeue(sdb);
             StreamProcessor<T, T>::pushData(sdb);
             if(sdb.isEndOfProcessing())
@@ -356,7 +353,7 @@ private:
     }
 
     /// @brief SPSC thread-safe queue used to buffer SharedDataBlocks
-    moodycamel::BlockingReaderWriterQueue<SharedDataBlock<T>> _queue;
+    moodycamel::BlockingReaderWriterCircularBuffer<SharedDataBlock<T>> _queue;
     /// Thread used to push blocks downstream
     std::thread _thread;
     /// Background thread started
@@ -407,7 +404,7 @@ template <typename T>
 class StreamSink final : public StreamVisitor<T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
     CDS_LOG_DTOR_VFUNC(StreamSink);
 

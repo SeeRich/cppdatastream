@@ -28,7 +28,7 @@ std::atomic_flag cancel = ATOMIC_FLAG_INIT;
 class SimpleAccumulator : public cds::StreamProcessor<DataT, DataT>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
     virtual ~SimpleAccumulator() { CDS_LOG_DTOR("{} DTOR: sum = {}", className(), _sum); }
 
@@ -52,7 +52,7 @@ private:
 class DataStreamPassThrough : public cds::StreamProcessor<DataT, DataT>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
     explicit DataStreamPassThrough(uint64_t index) : _index(index) {}
 
@@ -71,7 +71,7 @@ template <typename T>
 class DataStreamThroughputMonitor : public cds::StreamProcessor<T, T>
 {
 public:
-    CPPDATASTREAM_CLASS_NAME_OVERRIDE();
+    CPPDATASTREAM_CLASS_NAME();
 
     CDS_LOG_DTOR_VFUNC(DataStreamThroughputMonitor);
 
@@ -107,11 +107,12 @@ private:
 };
 
 // This simple example demonstrates how to create a simple data processing pipeline using cppdatastream.
-// The pipeline consists of a StreamThreadedBuffer -> SimpleAccumulator (optional, default=off) -> DataStreamThroughputMonitor -> StreamSink
-// Data blocks are pushed manually into the StreamThreadedBuffer and the pipeline processes them.
-// This example is intentionally simple and doesn't include a DataStreamSource since that is usually the hardest part to implement.
-// Also, this example isn't optimized for performance. Each data block is allocated by the main thread before passing it to the pipeline.
-// Ideally, the data blocks would be pre-allocated and reused to avoid the overhead of memory allocation.
+// The pipeline consists of a StreamThreadedBuffer -> SimpleAccumulator (optional, default=off) ->
+// DataStreamThroughputMonitor -> StreamSink Data blocks are pushed manually into the StreamThreadedBuffer and the
+// pipeline processes them. This example is intentionally simple and doesn't include a DataStreamSource since that is
+// usually the hardest part to implement. Also, this example isn't optimized for performance. Each data block is
+// allocated by the main thread before passing it to the pipeline. Ideally, the data blocks would be pre-allocated and
+// reused to avoid the overhead of memory allocation.
 
 int main(int argc, char* argv[])
 {
@@ -129,13 +130,13 @@ int main(int argc, char* argv[])
     app.set_version_flag("--version",
                          fmt::format("Version: {}", fmt::format(fg(fmt::terminal_color::green), "{}", "0.1.0")));
     // Number of data blocks to pass through the pipeline
-    uint32_t numBlocks = 10'000'000;
+    uint32_t numBlocks = 1'000'000;
     app.add_option("-d,--datablocks", numBlocks, "Number of data blocks");
     // Number of datastreams to use in the pipeline
     bool withAccumulator{false};
     app.add_flag("-a,--accumulator", withAccumulator, "Add an accumulator to the pipeline");
     // Number of bytes in each block
-    uint32_t numBytesPerBlock = 16384;
+    uint32_t numBytesPerBlock = 32'768;
     app.add_option("-b,--bytes", numBytesPerBlock, "Number of bytes per block");
     // Parse the CLI string
     CLI11_PARSE(app, argc, argv);

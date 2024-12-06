@@ -14,9 +14,9 @@ find_package(cpptrace REQUIRED)
 add_library(datastream_obj OBJECT)
 target_include_directories(datastream_obj PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
 )
 target_sources(datastream_obj PRIVATE Utilities.cpp)
+target_link_libraries(datastream_obj PUBLIC cppdatastream)
 target_link_libraries(datastream_obj PUBLIC cpptrace::cpptrace)
 target_link_libraries(datastream_obj PUBLIC fmt::fmt Boost::boost spdlog::spdlog)
 target_link_libraries(datastream_obj PUBLIC libpcap::libpcap jemalloc::jemalloc)
@@ -31,6 +31,17 @@ else()
     target_compile_options(datastream_obj PRIVATE -Wall -Wextra -pedantic -Wsuggest-override -march=native)
     target_link_options(datastream_obj PRIVATE -march=native)
 endif()
+
+# Custom target for formatting code
+file(GLOB_RECURSE FORMAT_SOURCES
+    LIST_DIRECTORIES true
+    ${CMAKE_SOURCE_DIR}/include/*.hpp
+    ${CMAKE_SOURCE_DIR}/src/*.cpp)
+# message(STATUS "Formatting sources: ${FORMAT_SOURCES}")
+add_custom_target(format_code
+  COMMAND clang-format -i -style=file ${FORMAT_SOURCES}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
 
 # Add executable to Signal Safe Stack tracing
 # add_executable(signal_tracer SignalTracer.cpp)

@@ -32,13 +32,17 @@ RUN locale-gen en_US.UTF-8
 RUN update-ca-certificates
 
 ############################## LLVM ##############################
+ARG CLANG_VER=19
 RUN wget https://apt.llvm.org/llvm.sh && \
     chmod +x llvm.sh && \
-    ./llvm.sh 19 && \
-    apt install -y clang-format clang-tidy clang-tools clang clangd \
-    libc++-dev libc++1 libc++abi-dev libc++abi1 libclang-dev libclang1 \
-    liblldb-dev libllvm-ocaml-dev libomp-dev libomp5 lld lldb llvm-dev \
-    llvm-runtime llvm python3-clang
+    ./llvm.sh ${CLANG_VER} && \
+    apt install -y clang-format-${CLANG_VER} clang-tidy-${CLANG_VER} clang-tools-${CLANG_VER} \
+    clang-${CLANG_VER} clangd-${CLANG_VER} libclang-${CLANG_VER}-dev libclang1-${CLANG_VER} \
+    libc++-${CLANG_VER}-dev libc++1-${CLANG_VER} libc++abi1-${CLANG_VER} \
+    liblldb-${CLANG_VER} libomp-dev libomp5 lld-${CLANG_VER} lldb-${CLANG_VER} llvm-dev \
+    llvm-runtime llvm-${CLANG_VER} python3-clang-${CLANG_VER}
+COPY docker/update-alternatives-clang.sh update-alternatives-clang.sh
+RUN chmod +x ./update-alternatives-clang.sh  && ./update-alternatives-clang.sh ${CLANG_VER} 100
 
 ############################## PYTHON ##############################
 ENV PYTHON_VER=3.12
