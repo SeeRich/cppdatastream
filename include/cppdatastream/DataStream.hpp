@@ -210,6 +210,8 @@ public:
 
 }  // namespace detail
 
+std::string version() { return CPPDATASTREAM_VERSION; }
+
 template <typename IN_T>
 class StreamVisitor
 {

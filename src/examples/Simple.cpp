@@ -127,8 +127,9 @@ int main(int argc, char* argv[])
 
     // CLI options
     CLI::App app("DataStream processing pipeline prototpye");
-    app.set_version_flag("--version",
-                         fmt::format("Version: {}", fmt::format(fg(fmt::terminal_color::green), "{}", "0.1.0")));
+    app.set_version_flag(
+        "--version",
+        fmt::format("Version: {}", fmt::format(fg(fmt::terminal_color::green), "{}", cppdatastream::version())));
     // Number of data blocks to pass through the pipeline
     uint32_t numBlocks = 1'000'000;
     app.add_option("-d,--datablocks", numBlocks, "Number of data blocks");

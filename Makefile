@@ -1,6 +1,6 @@
 # NOTE: usage of makefile target-specific variables: https://stackoverflow.com/questions/26382846/change-a-make-variable-and-call-another-rule-from-a-recipe-in-same-makefile
 
-default: build_gcc install
+default: build_gcc
 
 conan_deps: FORCE
 # We build all the dependencies in Release but we "tell" the consumer it's a different build type

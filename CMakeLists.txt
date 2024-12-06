@@ -1,14 +1,15 @@
-# cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=install -G Ninja
-# cmake --build build --config Release --clean-first
+# Only 3.10 is required for consumers
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project
-project(datastream VERSION 0.1.0 LANGUAGES CXX)
+project(cppdatastream VERSION 0.1.0 LANGUAGES CXX)
+message(STATUS "cppdatastream version: ${CMAKE_PROJECT_VERSION}")
 
 include(GNUInstallDirs)
 
 # Main header-only library
 add_library(cppdatastream INTERFACE)
+target_compile_definitions(cppdatastream INTERFACE CPPDATASTREAM_VERSION="${CMAKE_PROJECT_VERSION}")
 target_include_directories(cppdatastream INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/cppdatastream>
@@ -17,11 +18,12 @@ target_include_directories(cppdatastream INTERFACE
 )
 
 # Are we the top-level project?
-# If so, we development settings
+# If so, we setup development settings
 set(IS_TOP_LEVEL_PROJECT FALSE)
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(IS_TOP_LEVEL_PROJECT TRUE)
 
+    # Much newer cmake is required for development
     cmake_minimum_required(VERSION 3.30)
 
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
