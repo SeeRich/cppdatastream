@@ -34,7 +34,6 @@ endif()
 
 # Custom target for formatting code
 file(GLOB_RECURSE FORMAT_SOURCES
-    LIST_DIRECTORIES true
     ${CMAKE_SOURCE_DIR}/include/*.hpp
     ${CMAKE_SOURCE_DIR}/src/*.cpp)
 # message(STATUS "Formatting sources: ${FORMAT_SOURCES}")
