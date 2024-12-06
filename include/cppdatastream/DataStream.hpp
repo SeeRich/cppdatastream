@@ -38,7 +38,7 @@ namespace cppdatastream {
 namespace detail {
 
 /// @brief Designed to be called as demangleName(typeid(...).name())
-::std::string demangleName(const ::std::string& name)
+inline ::std::string demangleName(const ::std::string& name)
 {
 #ifdef HAS_CXX_DEMANGLE
     int status{0};
@@ -210,7 +210,7 @@ public:
 
 }  // namespace detail
 
-std::string version() { return CPPDATASTREAM_VERSION; }
+inline std::string version() { return CPPDATASTREAM_VERSION; }
 
 template <typename IN_T>
 class StreamVisitor
@@ -410,6 +410,16 @@ public:
 
     CDS_LOG_DTOR_VFUNC(StreamSink);
 
+    StreamSink()
+    {
+        auto promise = std::make_shared<std::promise<EopStatus>>();
+        _future = promise->get_future().share();
+        _func = [promise](const EopStatus& eop) {
+            CDS_LOG_DEBUG("StreamSink: EOS");
+            promise->set_value(eop);
+        };
+    }
+
     virtual bool visitData(const SharedDataBlock<T>& sdb) override
     {
         if(sdb.isEndOfProcessing())
@@ -419,18 +429,14 @@ public:
 
     EopStatus wait()
     {
-        // Create a promise and a future
-        std::promise<EopStatus> promise;
-        auto future = promise.get_future();
-
-        // Set the function to set the promise
-        _func = [&promise](const EopStatus& eop) { promise.set_value(eop); };
-
+        // Make copy of shared future
+        auto future = _future;
         // Wait for the future to be set
         return future.get();
     }
 
 private:
+    std::shared_future<EopStatus> _future;
     std::function<void(const EopStatus&)> _func;
 };
 
