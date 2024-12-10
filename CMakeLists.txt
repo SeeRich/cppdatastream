@@ -3,13 +3,14 @@ cmake_minimum_required(VERSION 3.10)
 
 # Define the project
 project(cppdatastream VERSION 0.1.0 LANGUAGES CXX)
-message(STATUS "cppdatastream version: ${CMAKE_PROJECT_VERSION}")
+set(CPPDATASTREAM_VERSION ${PROJECT_VERSION} CACHE INTERNAL "cppdatastream version")
+message(STATUS "cppdatastream version: ${CPPDATASTREAM_VERSION}")
 
 include(GNUInstallDirs)
 
 # Main header-only library
 add_library(cppdatastream INTERFACE)
-target_compile_definitions(cppdatastream INTERFACE CPPDATASTREAM_VERSION="${CMAKE_PROJECT_VERSION}")
+target_compile_definitions(cppdatastream INTERFACE CPPDATASTREAM_VERSION="${CPPDATASTREAM_VERSION}")
 target_include_directories(cppdatastream INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/cppdatastream>
