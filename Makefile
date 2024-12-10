@@ -55,6 +55,9 @@ format: FORCE
 lint: FORCE
 	run-clang-tidy -p build -checks=-*,clang-analyzer-*,-clang-analyzer-osx* -quiet
 
+test: FORCE
+	cd tests && make cmake-fetch-content-consumer
+
 clean:
 	@rm -rf install
 	@rm -rf build

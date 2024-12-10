@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Define the project
-project(cppdatastream VERSION 0.1.0 LANGUAGES CXX)
+project(cppdatastream VERSION 0.0.1 LANGUAGES CXX)
 set(CPPDATASTREAM_VERSION ${PROJECT_VERSION} CACHE INTERNAL "cppdatastream version")
 message(STATUS "cppdatastream version: ${CPPDATASTREAM_VERSION}")
 
