@@ -122,7 +122,7 @@ void setLogger(std::shared_ptr<ILogger> logger)
     #define CDS_LOG_DTOR_VFUNC(name) \
         virtual ~name() { CDS_LOG_DTOR("{} DTOR", className()); }
 #else
-    #define CDS_LOG_DTOR()
+    #define CDS_LOG_DTOR(...)
     #define CDS_LOG_DTOR_VFUNC(name)
 #endif
 
