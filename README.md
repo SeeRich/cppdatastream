@@ -1,11 +1,33 @@
 # CPPDATASTREAM:
 Simple repo exploring the performance of a general-use, block-based processing pipeline.
 
+## Usage
+
+### How to use in your project? 
+* It's header only, so you could simply copy and paste header files
+* Recommended - CMake FetchContent
+    ```cmake
+    ...
+    FetchContent_Declare(
+      cppdatastream
+      GIT_REPOSITORY https://github.com/SeeRich/cppdatastream.git
+      GIT_TAG        v0.2.0
+    )
+    FetchContent_MakeAvailable(cppdatastream)
+    ...
+    target_link_libraries(target_name PUBLIC cppdatastream)
+    ```
+
+### Code examples
+* See [examples](src/examples/)
+
+## DEVELOPERS:
+
 ### Prerequisites:
 * Install just (Justfile)
-* Install docker
+* Install docker (for linux/mac testing)
 
-### Getting setup:
+### Linux/Mac development uses docker:
 ```bash
 just docker-build
 just docker-run
@@ -15,10 +37,7 @@ make build_gcc
 # OR with Clang
 make build_clang
 ```
-
 * Trigger a rebuild (not a clean build) using: `make cmake_build`
-
-### DEVELOPERS:
 
 ### Windows (amd64) build:
 ```shell
