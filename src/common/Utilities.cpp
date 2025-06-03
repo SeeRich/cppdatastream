@@ -3,8 +3,6 @@
 #include <cpptrace/cpptrace.hpp>
 
 #include <signal.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <array>
 #include <csignal>
 #include <cstring>
@@ -12,72 +10,27 @@
 #include <iostream>
 #include <tuple>
 
+#ifdef _WIN32
+    #include <io.h>
+    #include <windows.h>
+#else
+    #include <unistd.h>
+#endif
+
 namespace detail {
-
-// CPPTRACE details for signal safe stack trace, SEE:
-// https://github.com/jeremy-rifkin/cpptrace/blob/main/docs/signal-safe-tracing.md
-
-// This is just a utility I like, it makes the pipe API more expressive.
-// struct pipe_t
-// {
-//     union {
-//         struct
-//         {
-//             int read_end;
-//             int write_end;
-//         };
-//         int data[2];
-//     };
-// };
-
-// void do_signal_safe_trace(cpptrace::frame_ptr* buffer, std::size_t count)
-// {
-//     // Setup pipe and spawn child
-//     pipe_t input_pipe;
-//     std::ignore = pipe(input_pipe.data);
-//     const pid_t pid = fork();
-//     if(pid == -1) {
-//         const char* fork_failure_message = "fork() failed\n";
-//         std::ignore = write(STDERR_FILENO, fork_failure_message, strlen(fork_failure_message));
-//         return;
-//     }
-//     if(pid == 0) {  // child
-//         dup2(input_pipe.read_end, STDIN_FILENO);
-//         close(input_pipe.read_end);
-//         close(input_pipe.write_end);
-//         execl("signal_tracer", "signal_tracer", nullptr);
-//         const char* exec_failure_message =
-//             "exec(signal_tracer) failed: Make sure the signal_tracer executable is in "
-//             "the current working directory and the binary's permissions are correct.\n";
-//         std::ignore = write(STDERR_FILENO, exec_failure_message, strlen(exec_failure_message));
-//         _exit(1);
-//     }
-//     // Resolve to safe_object_frames and write those to the pipe
-//     for(std::size_t i = 0; i < count; i++) {
-//         cpptrace::safe_object_frame frame;
-//         cpptrace::get_safe_object_frame(buffer[i], &frame);
-//         std::ignore = write(input_pipe.write_end, &frame, sizeof(frame));
-//     }
-//     close(input_pipe.read_end);
-//     close(input_pipe.write_end);
-//     // Wait for child
-//     waitpid(pid, nullptr, 0);
-// }
 
 void handler(int signo)
 {
     // Print basic message
+#ifdef _WIN32
+    auto message = std::format("SIGNAL: {}\n", signo);
+    std::ignore = _write(_fileno(stderr), message.c_str(), static_cast<unsigned int>(message.size()));
+#else
     auto message = std::format("SIGNAL: {}\n", strsignal(signo));
     std::ignore = write(STDERR_FILENO, message.c_str(), message.size());
-    // Generate trace
+#endif
+    // Generate trace (this is definitely not signal safe)
     cpptrace::generate_trace().print();
-    // WHY DOESN'T THE FOLLOWING WORK?
-    // constexpr std::size_t N = 100;
-    // cpptrace::frame_ptr buffer[N];
-    // std::size_t count = cpptrace::safe_generate_raw_trace(buffer, N);
-    // message = std::format("Generated {} frames\n", count);
-    // std::ignore = write(STDERR_FILENO, message.c_str(), message.size());
-    // do_signal_safe_trace(buffer, count);
     // Up to you if you want to exit or continue or whatever
     std::exit(signo);
 }
@@ -108,29 +61,51 @@ std::string prettyPrintBytes(uint64_t bytes)
     return std::format("{:02f} {}", dblBytes, suffix[i]);
 }
 
-void sigIntHandler(int signo)
-{
-    auto message = std::format("SIGNAL: {}\n", strsignal(signo));
-    std::ignore = write(STDERR_FILENO, message.c_str(), message.size());
-    std::exit(signo);
-}
+// Static handler for SIGINT
+std::function<void(int)> sigIntHandlerFunc;
+
+void sigIntHandler(int signo) { sigIntHandlerFunc(signo); }
 
 void registerSignalHandlers()
 {
-    // Let us handle CTRL-C (i.e. SIGINT) specially.
+    // Default handler for SIGINT
+    sigIntHandlerFunc = [](int signo) {
+#ifdef _WIN32
+        auto message = std::format("SIGNAL: {}\n", signo);
+        std::ignore = _write(_fileno(stderr), message.c_str(), static_cast<unsigned int>(message.size()));
+#else
+        auto message = std::format("SIGNAL: {}\n", strsignal(signo));
+        std::ignore = write(STDERR_FILENO, message.c_str(), message.size());
+#endif
+        std::signal(SIGINT, SIG_DFL);
+    };
     std::signal(SIGINT, sigIntHandler);
 
     detail::warmup_cpptrace();
 
-    // Setup other signal handlers
+    // Setup other signal handlers - only register signals that are supported on the current platform
     std::signal(SIGSEGV, detail::handler);
     std::signal(SIGABRT, detail::handler);
     std::signal(SIGFPE, detail::handler);
     std::signal(SIGILL, detail::handler);
+    std::signal(SIGTERM, detail::handler);
+
+#ifndef _WIN32
+    // These signals are not available on Windows
     std::signal(SIGBUS, detail::handler);
     std::signal(SIGTRAP, detail::handler);
     std::signal(SIGSYS, detail::handler);
     std::signal(SIGXCPU, detail::handler);
     std::signal(SIGXFSZ, detail::handler);
     std::signal(SIGPIPE, detail::handler);
+#endif
+}
+
+void registerProgramInterruptHandler(std::function<void()> handler)
+{
+    // Override previous handler if present
+    sigIntHandlerFunc = [handler](int) {
+        handler();
+        std::signal(SIGINT, SIG_DFL);
+    };
 }

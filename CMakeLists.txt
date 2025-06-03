@@ -6,6 +6,10 @@ project(cppdatastream VERSION 0.0.1 LANGUAGES CXX)
 set(CPPDATASTREAM_VERSION ${PROJECT_VERSION} CACHE INTERNAL "cppdatastream version")
 message(STATUS "cppdatastream version: ${CPPDATASTREAM_VERSION}")
 
+# C++17 is required to consume the "library", C++20 is required for development/examples
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 include(GNUInstallDirs)
 
 # Main header-only library
@@ -26,7 +30,8 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 
     # Much newer cmake is required for development
     cmake_minimum_required(VERSION 3.30)
-
+    
+    set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)

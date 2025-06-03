@@ -23,7 +23,86 @@ namespace cds = cppdatastream;
 // Aligned datablock of bytes
 using DataT = AlignedVector<uint8_t>;
 
-std::atomic_flag cancel = ATOMIC_FLAG_INIT;
+class SimpleSource : public cds::StreamSource<DataT>
+{
+public:
+    CPPDATASTREAM_CLASS_NAME();
+
+    SimpleSource(uint64_t numBlocks, uint64_t numBytesPerBlock)
+        : _num_blocks(numBlocks), _num_bytes_per_block(numBytesPerBlock)
+    {}
+
+    virtual ~SimpleSource()
+    {
+        if(_thread.joinable())
+            _thread.join();
+        CDS_LOG_DTOR("{} DTOR", className());
+    }
+
+    virtual bool start() override
+    {
+        LOG_DEBUG("Starting source");
+        // Move the downstream into a separate thread that will allocate and push the data blocks
+        _thread = std::thread(&SimpleSource::run, this, std::move(_downstream));
+        return true;
+    }
+
+    virtual bool stop() override
+    {
+        LOG_DEBUG("Stopping source");
+        _stop_flag.store(1);
+        return true;
+    }
+
+    virtual bool cancel() override
+    {
+        LOG_DEBUG("Cancelling source");
+        _stop_flag.store(2);
+        return true;
+    }
+
+    virtual void connect(const std::shared_ptr<cds::StreamPushable<DataT>>& downstream) override
+    {
+        LOG_DEBUG("Connecting source to downstream");
+        _downstream = downstream;
+    }
+
+private:
+    void run(std::shared_ptr<cds::StreamPushable<DataT>>&& downstream)
+    {
+        LOG_INFO("Processing {} blocks of {} bytes each", _num_blocks, _num_bytes_per_block);
+        uint64_t num_blocks{0};
+        while(num_blocks < _num_blocks && _stop_flag.load() == 0) {
+            // Allocate an aligned vector of bytes filled with ones
+            auto vec = DataT(_num_bytes_per_block, 1);
+            // Create a writable data block;
+            auto wb = cds::WritableDataBlock<DataT>();
+            // Set the data (copy the vector)
+            wb.setData(vec);
+            // Push the data block
+            downstream->pushData(wb);
+            num_blocks++;
+        }
+
+        // Push an EndOfProcessing block
+        auto wb = cds::WritableDataBlock<DataT>();
+        auto stopFlag = _stop_flag.load();
+        if(0 == stopFlag || 1 == stopFlag) {
+            wb.setEndOfProcessing(cds::EopStatus{cds::EopStatusType::EopSuccess});
+        } else if(2 == stopFlag) {
+            wb.setEndOfProcessing(cds::EopStatus{cds::EopStatusType::EopCancelled});
+        } else {
+            wb.setEndOfProcessing(cds::EopStatus{cds::EopStatusType::EopError, "Unknown stop flag"});
+        }
+        downstream->pushData(wb);
+    }
+
+    uint64_t _num_blocks{0};
+    uint64_t _num_bytes_per_block{0};
+    std::atomic_uint8_t _stop_flag{0};
+    std::thread _thread;
+    std::shared_ptr<cds::StreamPushable<DataT>> _downstream;
+};
 
 class SimpleAccumulator : public cds::StreamProcessor<DataT, DataT>
 {
@@ -106,24 +185,14 @@ private:
     uint64_t _throughput_bytes{0};
 };
 
-// This simple example demonstrates how to create a simple data processing pipeline using cppdatastream.
-// The pipeline consists of a StreamThreadedBuffer -> SimpleAccumulator (optional, default=off) ->
-// DataStreamThroughputMonitor -> StreamSink Data blocks are pushed manually into the StreamThreadedBuffer and the
-// pipeline processes them. This example is intentionally simple and doesn't include a DataStreamSource since that is
-// usually the hardest part to implement. Also, this example isn't optimized for performance. Each data block is
-// allocated by the main thread before passing it to the pipeline. Ideally, the data blocks would be pre-allocated and
-// reused to avoid the overhead of memory allocation.
+// This example demonstrates how to create a more realistic data processing pipeline using cppdatastream.
+// Compared to the simple example, this example includes a DataStreamSource and a DataStreamSink with some a some simple
+// processing in between.
 
 int main(int argc, char* argv[])
 {
     // Setup signal handler
     registerSignalHandlers();
-
-    // Setup program interrupt handler
-    registerProgramInterruptHandler([&]() {
-        LOG_INFO("Program interrupted");
-        cancel.test_and_set();
-    });
 
     // Setup logging
     spdlog::set_level(spdlog::level::trace);
@@ -132,7 +201,7 @@ int main(int argc, char* argv[])
     cppdatastream::setLogger(cdsLogger);
 
     // CLI options
-    CLI::App app("DataStream processing pipeline prototype (simple)");
+    CLI::App app("DataStream processing pipeline prototype (source)");
     app.set_version_flag(
         "--version",
         fmt::format("Version: {}", fmt::format(fg(fmt::terminal_color::green), "{}", cppdatastream::version())));
@@ -148,12 +217,20 @@ int main(int argc, char* argv[])
     // Parse the CLI string
     CLI11_PARSE(app, argc, argv);
 
-    // Allocate the number of data blocks up front
-    LOG_INFO("Processing {} blocks of {} bytes each", numBlocks, numBytesPerBlock);
+    // Create the source
+    auto source = std::make_shared<SimpleSource>(numBlocks, numBytesPerBlock);
 
-    // Create a DataStreamSource that we will push data into.
-    auto tb = std::make_shared<cds::StreamThreadedBuffer<DataT>>(1'000);
+    // Register a interrupt handler to stop the source
+    registerProgramInterruptHandler([&]() {
+        LOG_INFO("Interrupting source");
+        source->cancel();
+    });
 
+    // Add a thread buffer after the source
+    auto tb = std::make_shared<cds::StreamThreadedBuffer<DataT>>();
+    source->connect(tb);
+
+    // Treat as base class StreamProcessor
     std::shared_ptr<cds::StreamProcessor<DataT, DataT>> ds = tb;
 
     // Add simple processor datastream
@@ -172,36 +249,12 @@ int main(int argc, char* argv[])
     auto sink = std::make_shared<cds::StreamSink<DataT>>();
     ds->connect(sink);
 
-    // Allocate an aligned vector of bytes filled with ones1
-    auto vec = DataT(numBytesPerBlock, 1);
+    // Start the source
+    source->start();
 
-    auto start = std::chrono::steady_clock::now();
-
-    // Push the block through the pipeline
-    for(uint64_t i = 0; i < numBlocks; ++i) {
-        if(cancel.test())
-            break;
-        // Create a writable data block;
-        auto wb = cds::WritableDataBlock<DataT>();
-        // Set the data (copy the vector)
-        wb.setData(vec);
-        // Push the data block
-        tb->pushData(wb);
-    }
-
-    // Push an EndOfProcessing block
-    auto wb = cds::WritableDataBlock<DataT>();
-    wb = cds::WritableDataBlock<DataT>();
-    wb.setEndOfProcessing(cds::EopStatus{});
-    tb->pushData(wb);
-
-    sink->wait();
-
-    // Log the total amount of data processed
-    std::chrono::duration<float> duration = std::chrono::steady_clock::now() - start;
-    LOG_INFO("Processed {} in {} seconds\n",
-             prettyPrintBytes(numBlocks * static_cast<uint64_t>(numBytesPerBlock)),
-             duration.count());
+    // Wait for the sink to finish
+    auto eopStatus = sink->wait();
+    LOG_INFO("EOP status: {}", eopStatus.toString());
 
     return 0;
 }

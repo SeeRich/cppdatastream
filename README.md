@@ -20,8 +20,14 @@ make build_clang
 
 ### DEVELOPERS:
 
-#### TODO:
-[ ] Handle MPSC ThreadedBuffer
+### Windows (amd64) build:
+```shell
+python -m pip install -U conan ninja
+conan install . --output-folder=deps --build missing -s :build_type=Release
+deps/conanbuild.bat
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=y
+cmake --build build
+```
 
 ### Using GPROF:
 ```bash

@@ -148,6 +148,22 @@ struct EopStatus
     EopStatusType type{EopSuccess};
     // Message associated with the status (should always be set for errors)
     std::string message;
+
+    std::string toString()
+    {
+        switch(type) {
+            case EopSuccess:
+                return "Success";
+            case EopCancelled:
+                return "Cancelled";
+            case EopError: {
+                return "Error: " + message;
+            }
+            default: {
+                return "Unknown";
+            }
+        }
+    }
 };
 
 template <typename T>
@@ -195,8 +211,6 @@ public:
     }
 };
 
-namespace detail {
-
 template <typename IN_T>
 class StreamPushable
 {
@@ -207,8 +221,6 @@ public:
 
     virtual void pushData(const SharedDataBlock<IN_T>& sdb) = 0;
 };
-
-}  // namespace detail
 
 inline std::string version() { return CPPDATASTREAM_VERSION; }
 
@@ -224,7 +236,7 @@ public:
 };
 
 template <typename IN_T, typename OUT_T>
-class StreamProcessor : public detail::StreamPushable<IN_T>
+class StreamProcessor : public StreamPushable<IN_T>
 {
 public:
     CPPDATASTREAM_CLASS_NAME();
@@ -235,10 +247,7 @@ public:
     virtual auto processData(const SharedDataBlock<IN_T>& sdb) -> SharedDataBlock<OUT_T> = 0;
 
     // Connects a StreamPushable to this processor
-    virtual void connect(const std::shared_ptr<detail::StreamPushable<IN_T>>& processor)
-    {
-        processors.push_back(processor);
-    }
+    virtual void connect(const std::shared_ptr<StreamPushable<IN_T>>& processor) { processors.push_back(processor); }
 
     // Connects a StreamVisitor to this processor
     virtual void connect(const std::shared_ptr<StreamVisitor<IN_T>>& visitor) { visitors.push_back(visitor); }
@@ -276,7 +285,7 @@ protected:
     std::string _name;
     bool _had_error{false};
     std::vector<std::shared_ptr<StreamVisitor<IN_T>>> visitors;
-    std::vector<std::shared_ptr<detail::StreamPushable<IN_T>>> processors;
+    std::vector<std::shared_ptr<StreamPushable<IN_T>>> processors;
 };
 
 template <typename OUT_T>
@@ -295,6 +304,9 @@ public:
 
     // Cancel processing
     virtual bool cancel() = 0;
+
+    // Connect to downstream
+    virtual void connect(const std::shared_ptr<StreamPushable<OUT_T>>& downstream) = 0;
 };
 
 /// Passthrough processor, useful to bridge specific elements that interface only with
