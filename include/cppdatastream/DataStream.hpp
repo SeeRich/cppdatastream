@@ -271,10 +271,11 @@ public:
 
         // Allow visitors to visit
         for(auto& visitor : visitors) {
-            if(!visitor->visitData(output))
+            if(!visitor->visitData(output)) {
                 CDS_LOG_ERROR("{}: failed to visit dataBlock type: {}",
                               detail::demangleName(typeid(visitor).name()),
                               detail::demangleName(typeid(sdb).name()));
+                }
         }
 
         // Push the processed data to the connected processors
